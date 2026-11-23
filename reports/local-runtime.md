@@ -12,7 +12,7 @@ People who have never opened a terminal set up Replicants with one button on Hom
 3. **Picks a mind that fits**, unless the person already chose one: `gemma4:26b` with 16 GB+ of graphics memory, `gemma4:e4b` with 8 GB+ of graphics memory or 16 GB+ of RAM, `gemma4:e2b` with 8 GB+ of RAM. These tiers are provisional until the model evaluation scores the smaller models.
 4. **Downloads what's missing**, with progress: "Preparing a place for thought…", "Downloading a mind…", "Downloading memory…".
 
-A source checkout ships an unpinned `runtime_pin.json`, and an unpinned build refuses to download a runtime at all: it falls back to an Ollama the person installs. Settings offers the choice explicitly: automatic, built into Replicants, or an Ollama I installed.
+`replicants/desktop/runtime_pin.json` pins Ollama 0.40.15 by version, download URL, size and SHA-256. A build without a complete pin refuses to download a runtime at all: it falls back to an Ollama the person installs. Settings offers the choice explicitly: automatic, built into Replicants, or an Ollama I installed.
 
 ## Signing
 
