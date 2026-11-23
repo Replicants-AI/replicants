@@ -226,7 +226,7 @@ def test_routines_html_lists_automations():
         automations_enabled=True,
         scheduler_ready=True,
     )
-    assert "Moss's Routines" in out
+    assert "Moss' Routines" in out
     assert "1 active · 0 paused" in out
     assert "Morning check-in" in out
     assert "every day at 9am" in out
