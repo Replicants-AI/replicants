@@ -1,0 +1,1358 @@
+"""CLI entry: setup, create, run, stop, talk, worker, api, status, version, evolve, knowledge, journal, recall, wipe, soma-reset, export, import, update, gateway (on/off/status/restart/setup)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shlex
+import shutil
+import signal
+import subprocess
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import click
+
+from replicants.__version__ import __version__ as REPLICANTS_VERSION
+from replicants.config import (
+    EntityConfig,
+    load_entity_config,
+    load_harness_config,
+    project_configs_dir,
+    validate_entity_env,
+)
+from replicants.entity import Entity, format_user_visible_failure
+from replicants.genesis import creator
+from replicants.health import check_inference
+from replicants.models import Input
+from replicants.presence.daemon import PresenceDaemon
+from replicants.presence.platforms.base import Platform
+from replicants.presence.platforms.cli import CLIPlatform
+from replicants.presence.platforms.discord_platform import DiscordPlatform, token_from_config
+from replicants.presence.platforms.telegram_platform import TelegramPlatform, merge_telegram_operator_user_ids
+from replicants.utils.log import setup_logging
+from replicants.utils.ollama_bootstrap import bootstrap_stack, shutdown_spawned_ollama
+from replicants.utils.gateway_script import (
+    gateway_script_available,
+    run_gateway_script as _run_gateway_script_subprocess,
+)
+from replicants.utils.repo_dotenv import load_repo_dotenv
+from replicants.utils.self_update import perform_self_update
+
+
+def _mask_database_url(url: str) -> str:
+    """Redact password for stderr logging."""
+    try:
+        p = urlsplit(url)
+        if p.scheme not in ("postgresql", "postgres"):
+            return url
+        host = p.hostname or ""
+        port = f":{p.port}" if p.port else ""
+        user = p.username or ""
+        tail = (p.path or "") + (f"?{p.query}" if p.query else "")
+        if user:
+            return f"{p.scheme}://{user}:***@{host}{port}{tail}"
+        return f"{p.scheme}://***@{host}{port}{tail}"
+    except Exception:
+        return "postgresql://…"
+
+
+def _apply_cli_database_url(cli_value: str | None) -> None:
+    """Ensure DATABASE_URL is set before Entity() when the user passes --database-url."""
+    if cli_value and str(cli_value).strip():
+        os.environ["DATABASE_URL"] = str(cli_value).strip()
+
+
+def _echo_cli_database_target(ec: EntityConfig) -> None:
+    """Print which store the CLI will use (local SQLite vs Postgres)."""
+    u = (ec.database_url() or "").strip()
+    if u.startswith("postgresql://") or u.startswith("postgres://"):
+        click.echo(f"Database: {_mask_database_url(u)}", err=True)
+    else:
+        click.echo(f"Database: sqlite {Path(ec.db_path()).expanduser()}", err=True)
+
+
+def _warn_if_hybrid_without_postgres(ec: EntityConfig) -> None:
+    mode = (ec.harness.deployment.mode or "").strip().lower()
+    u = (ec.database_url() or "").strip()
+    if mode == "hybrid_railway" and not (
+        u.startswith("postgresql://") or u.startswith("postgres://")
+    ):
+        click.echo(
+            "Warning: deployment.mode is hybrid_railway but DATABASE_URL is not set — "
+            "this command uses local SQLite, not Railway Postgres. "
+            "Set DATABASE_URL (same as the worker) or pass --database-url.",
+            err=True,
+        )
+
+
+def _async(coro):
+    return asyncio.get_event_loop().run_until_complete(coro)
+
+
+KNOWLEDGE_STARTER_TEMPLATE = """## [locked] about yourself
+write anything you want the entity to know about itself.
+(locked sections can't be edited by the entity — only by you)
+
+## [locked] about your creator
+who made you? what do you know about them?
+
+## things you care about
+topics, opinions, facts — whatever matters.
+(the entity can edit unlocked sections like this one)
+"""
+
+
+def _app_version() -> str:
+    """Harness version (see ``replicants/__version__.py``)."""
+    return REPLICANTS_VERSION
+
+
+def _load_repo_dotenv() -> None:
+    load_repo_dotenv(anchor=Path(__file__))
+
+
+async def _wait_until_stopped() -> None:
+    """Block until SIGINT (Ctrl+C) or SIGTERM where available."""
+    loop = asyncio.get_running_loop()
+    stop = asyncio.Event()
+
+    def _schedule_stop(*_args: object) -> None:
+        try:
+            loop.call_soon_threadsafe(stop.set)
+        except RuntimeError:
+            pass
+
+    prev_sigint: object | None = None
+    prev_sigterm: object | None = None
+    used_asyncio_sigint = False
+    try:
+        loop.add_signal_handler(signal.SIGINT, _schedule_stop)
+        used_asyncio_sigint = True
+    except (NotImplementedError, RuntimeError):
+        prev_sigint = signal.signal(signal.SIGINT, _schedule_stop)
+    if hasattr(signal, "SIGTERM"):
+        try:
+            loop.add_signal_handler(signal.SIGTERM, _schedule_stop)
+        except (NotImplementedError, RuntimeError):
+            try:
+                prev_sigterm = signal.signal(signal.SIGTERM, _schedule_stop)
+            except ValueError:
+                pass
+    try:
+        await stop.wait()
+    finally:
+        if used_asyncio_sigint:
+            try:
+                loop.remove_signal_handler(signal.SIGINT)
+            except (NotImplementedError, RuntimeError):
+                pass
+        elif prev_sigint is not None:
+            signal.signal(signal.SIGINT, prev_sigint)
+        if hasattr(signal, "SIGTERM"):
+            try:
+                loop.remove_signal_handler(signal.SIGTERM)
+            except (NotImplementedError, RuntimeError, ValueError):
+                pass
+            if prev_sigterm is not None:
+                try:
+                    signal.signal(signal.SIGTERM, prev_sigterm)
+                except ValueError:
+                    pass
+
+
+async def _graceful_run_shutdown(daemon: PresenceDaemon, platforms: list, ent: Entity) -> None:
+    """Best-effort cleanup when the loop is cancelling (Ctrl+C); shield so close() can finish."""
+    try:
+        await asyncio.shield(daemon.stop())
+    except BaseException:
+        pass
+    for p in platforms:
+        try:
+            await asyncio.shield(p.disconnect())
+        except BaseException:
+            pass
+    try:
+        await asyncio.shield(ent.shutdown())
+    except BaseException:
+        pass
+    shutdown_spawned_ollama()
+
+
+class _OneShotCLIPlatform(Platform):
+    """Minimal CLI platform for single-turn prompts."""
+
+    def __init__(self, *, person_id: str = "cli_user", person_name: str = "You") -> None:
+        self._person_id = person_id
+        self._person_name = person_name
+        self._cb = None
+
+    async def connect(self) -> None:
+        return None
+
+    async def send_message(self, channel: str, content: str) -> None:
+        click.echo(content)
+
+    async def send_tool_activity(self, description: str) -> None:
+        return None
+
+    async def on_message(self, callback) -> None:
+        self._cb = callback
+
+    async def set_presence(self, status: str) -> None:
+        return None
+
+    async def disconnect(self) -> None:
+        return None
+
+    def get_person_id(self, message: object) -> str:
+        return self._person_id
+
+    def get_person_name(self, message: object) -> str:
+        return self._person_name
+
+
+def _prepare_ollama_cli(entity_name: str, with_ollama: bool, pull_models: bool) -> None:
+    if not with_ollama and not pull_models:
+        return
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    if with_ollama:
+        bootstrap_stack(ec, info=click.echo, pull_models=pull_models)
+    else:
+        from replicants.utils.ollama_bootstrap import pull_required_models
+
+        pull_required_models(ec, click.echo)
+
+
+def _run_gateway_script(action: str, extra_args: list[str] | None = None) -> None:
+    rc = _run_gateway_script_subprocess(action, extra_args)
+    if rc != 0:
+        raise click.ClickException(f"gateway {action} failed with exit code {rc}.")
+
+
+@click.group()
+@click.version_option(version=REPLICANTS_VERSION, prog_name="replicant")
+def cli() -> None:
+    # Runs before every subcommand; keep in sync with ``main()`` for entry points that call ``cli`` only.
+    _load_repo_dotenv()
+
+
+@cli.command("setup")
+@click.option(
+    "--profile",
+    type=click.Choice(["ask", "hybrid", "local"], case_sensitive=False),
+    default="ask",
+    show_default=True,
+    help="hybrid = home Ollama + gateway + Cloudflare tunnel + Railway (default when asking); local = single machine.",
+)
+@click.option(
+    "--gateway-host",
+    default="127.0.0.1",
+    show_default=True,
+    help="Host the inference gateway listens on (tunnel ingress must point here).",
+)
+@click.option(
+    "--gateway-port",
+    default=8010,
+    show_default=True,
+    type=int,
+    help="Port for the inference gateway (used when writing cloudflared config).",
+)
+@click.option(
+    "--skip-tunnel-bootstrap",
+    is_flag=True,
+    default=False,
+    help="Do not offer automated cloudflared tunnel + DNS + config.yml.",
+)
+@click.option(
+    "--mode",
+    "legacy_mode",
+    type=click.Choice(["ask", "quick", "full"], case_sensitive=False),
+    default=None,
+    hidden=True,
+    help="Deprecated: use --profile. quick→local, full→hybrid.",
+)
+def cmd_setup(
+    profile: str,
+    legacy_mode: str | None,
+    gateway_host: str,
+    gateway_port: int,
+    skip_tunnel_bootstrap: bool,
+) -> None:
+    """Interactive setup wizard (.env, gateway stack, Railway, entity)."""
+    from replicants.setup_wizard import run_setup_wizard
+
+    resolved = profile
+    if legacy_mode == "quick":
+        resolved = "local"
+    elif legacy_mode == "full":
+        resolved = "hybrid"
+    elif legacy_mode == "ask":
+        resolved = "ask"
+    run_setup_wizard(
+        profile=resolved,
+        gateway_host=gateway_host,
+        gateway_port=gateway_port,
+        skip_tunnel_bootstrap=skip_tunnel_bootstrap,
+    )
+
+
+@cli.command("create")
+def cmd_create() -> None:
+    """Launch interactive entity wizard."""
+    creator.run_wizard()
+
+
+@cli.group("gateway")
+def cmd_gateway() -> None:
+    """Inference gateway + Cloudflare tunnel: setup wizard; on/off/status/restart (gateway.ps1 or gateway.sh)."""
+
+
+@cmd_gateway.command("setup")
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option("--cloudflared-config", default="", help="Path to cloudflared config.yml (default: ~/.cloudflared/config.yml).")
+@click.option("--gateway-host", default="127.0.0.1", show_default=True)
+@click.option("--gateway-port", default=8010, show_default=True, type=int)
+@click.option(
+    "--skip-tunnel-bootstrap",
+    is_flag=True,
+    default=False,
+    help="Do not offer automated cloudflared tunnel + DNS + config.yml.",
+)
+def cmd_gateway_setup(
+    tunnel_name: str,
+    cloudflared_config: str,
+    gateway_host: str,
+    gateway_port: int,
+    skip_tunnel_bootstrap: bool,
+) -> None:
+    """Interactive wizard: bearer token, tunnel config, .env, then optional gateway on (local script)."""
+    from replicants.gateway_setup import run_gateway_setup_wizard
+
+    run_gateway_setup_wizard(
+        tunnel_name=tunnel_name,
+        cloudflared_config=cloudflared_config,
+        gateway_host=gateway_host,
+        gateway_port=gateway_port,
+        skip_tunnel_bootstrap=skip_tunnel_bootstrap,
+    )
+
+
+@cmd_gateway.command("on")
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option("--cloudflared-config", default="", help="Path to cloudflared config.yml.")
+@click.option("--tunnel-url", default="", help="Optional tunnel URL override for probes.")
+@click.option("--gateway-host", default="127.0.0.1", show_default=True)
+@click.option("--gateway-port", default=8010, show_default=True, type=int)
+def cmd_gateway_on(
+    tunnel_name: str,
+    cloudflared_config: str,
+    tunnel_url: str,
+    gateway_host: str,
+    gateway_port: int,
+) -> None:
+    """Start/validate ollama + inference gateway + cloudflared tunnel."""
+    args = [
+        "-TunnelName",
+        tunnel_name,
+        "-GatewayHost",
+        gateway_host,
+        "-GatewayPort",
+        str(gateway_port),
+    ]
+    if cloudflared_config.strip():
+        args += ["-CloudflaredConfig", cloudflared_config.strip()]
+    if tunnel_url.strip():
+        args += ["-TunnelUrl", tunnel_url.strip()]
+    _run_gateway_script("on", args)
+
+
+@cmd_gateway.command("off")
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option("--leave-ollama-running", is_flag=True)
+def cmd_gateway_off(tunnel_name: str, leave_ollama_running: bool) -> None:
+    """Stop cloudflared + gateway (+ ollama unless --leave-ollama-running)."""
+    args = ["-TunnelName", tunnel_name]
+    if leave_ollama_running:
+        args.append("-LeaveOllamaRunning")
+    _run_gateway_script("off", args)
+
+
+@cmd_gateway.command("status")
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option("--cloudflared-config", default="", help="Path to cloudflared config.yml.")
+@click.option("--tunnel-url", default="", help="Optional tunnel URL override for probes.")
+@click.option("--gateway-host", default="127.0.0.1", show_default=True)
+@click.option("--gateway-port", default=8010, show_default=True, type=int)
+def cmd_gateway_status(
+    tunnel_name: str,
+    cloudflared_config: str,
+    tunnel_url: str,
+    gateway_host: str,
+    gateway_port: int,
+) -> None:
+    """Show gateway process + health status."""
+    args = [
+        "-TunnelName",
+        tunnel_name,
+        "-GatewayHost",
+        gateway_host,
+        "-GatewayPort",
+        str(gateway_port),
+    ]
+    if cloudflared_config.strip():
+        args += ["-CloudflaredConfig", cloudflared_config.strip()]
+    if tunnel_url.strip():
+        args += ["-TunnelUrl", tunnel_url.strip()]
+    _run_gateway_script("status", args)
+
+
+@cmd_gateway.command("restart")
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option("--cloudflared-config", default="", help="Path to cloudflared config.yml.")
+@click.option("--tunnel-url", default="", help="Optional tunnel URL override for probes.")
+@click.option("--gateway-host", default="127.0.0.1", show_default=True)
+@click.option("--gateway-port", default=8010, show_default=True, type=int)
+@click.option("--leave-ollama-running", is_flag=True)
+def cmd_gateway_restart(
+    tunnel_name: str,
+    cloudflared_config: str,
+    tunnel_url: str,
+    gateway_host: str,
+    gateway_port: int,
+    leave_ollama_running: bool,
+) -> None:
+    """Stop then start the gateway stack (same as ``off`` then ``on``)."""
+    args = [
+        "-TunnelName",
+        tunnel_name,
+        "-GatewayHost",
+        gateway_host,
+        "-GatewayPort",
+        str(gateway_port),
+    ]
+    if cloudflared_config.strip():
+        args += ["-CloudflaredConfig", cloudflared_config.strip()]
+    if tunnel_url.strip():
+        args += ["-TunnelUrl", tunnel_url.strip()]
+    if leave_ollama_running:
+        args.append("-LeaveOllamaRunning")
+    _run_gateway_script("restart", args)
+
+
+@cli.command("talk")
+@click.argument("entity_name")
+@click.option(
+    "--ollama",
+    "with_ollama",
+    is_flag=True,
+    help="Start local Ollama if needed (does not pull models; use --pull-models to fetch).",
+)
+@click.option(
+    "--pull-models",
+    is_flag=True,
+    help="Run ollama pull for configured models (optional; combine with --ollama).",
+)
+def cmd_talk(entity_name: str, with_ollama: bool, pull_models: bool) -> None:
+    """CLI-only conversation (no daemon, no other platforms)."""
+    _prepare_ollama_cli(entity_name, with_ollama, pull_models)
+    try:
+        asyncio.run(_talk(entity_name))
+    except KeyboardInterrupt:
+        click.echo("\nStopped.", err=True)
+    finally:
+        shutdown_spawned_ollama()
+
+
+@cli.command("ask")
+@click.argument("entity_name")
+@click.argument("message_parts", nargs=-1, required=True)
+@click.option(
+    "--ollama",
+    "with_ollama",
+    is_flag=True,
+    help="Start local Ollama if needed (does not pull models; use --pull-models to fetch).",
+)
+@click.option(
+    "--pull-models",
+    is_flag=True,
+    help="Run ollama pull for configured models (optional; combine with --ollama).",
+)
+def cmd_ask(
+    entity_name: str,
+    message_parts: tuple[str, ...],
+    with_ollama: bool,
+    pull_models: bool,
+) -> None:
+    """Single-turn CLI prompt (one reply, no daemon)."""
+    message = " ".join(message_parts).strip()
+    if not message:
+        raise click.ClickException("Message cannot be empty.")
+    _prepare_ollama_cli(entity_name, with_ollama, pull_models)
+    try:
+        asyncio.run(_ask_once(entity_name, message))
+    except KeyboardInterrupt:
+        click.echo("\nStopped.", err=True)
+    finally:
+        shutdown_spawned_ollama()
+
+
+async def _ask_once(entity_name: str, message: str) -> None:
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    setup_logging(
+        ec.name,
+        ec.harness.logging.level,
+        ec.log_path(),
+        ec.harness.logging.format,
+        immersive=True,
+    )
+    ent = Entity(ec)
+    cli_p = _OneShotCLIPlatform()
+    await cli_p.connect()
+    ent.register_platform("cli", cli_p)
+    inp = Input(
+        text=message,
+        person_id=cli_p.get_person_id(None),
+        person_name=cli_p.get_person_name(None),
+        channel="cli",
+        platform="cli",
+    )
+    try:
+        reply, _ = await ent.perceive(inp, reply_platform=cli_p)
+        click.echo(reply)
+    finally:
+        try:
+            await asyncio.shield(cli_p.disconnect())
+        except BaseException:
+            pass
+        try:
+            await asyncio.shield(ent.shutdown())
+        except BaseException:
+            pass
+
+
+async def _talk(entity_name: str) -> None:
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    setup_logging(
+        ec.name,
+        ec.harness.logging.level,
+        ec.log_path(),
+        ec.harness.logging.format,
+        immersive=True,
+    )
+    ent = Entity(ec)
+    cli_p = CLIPlatform(ent, app_version=_app_version(), immersive=True)
+    await cli_p.connect()
+    ent.register_platform("cli", cli_p)
+
+    async def on_inp(inp):
+        try:
+            reply, _ = await ent.perceive(inp, stream=cli_p.stream_delta, reply_platform=cli_p)
+            return reply
+        except Exception as e:
+            return format_user_visible_failure(e)
+
+    await cli_p.on_message(on_inp)
+    try:
+        await cli_p.run_repl()
+    finally:
+        try:
+            await asyncio.shield(ent.shutdown())
+        except BaseException:
+            pass
+
+
+@cli.command("run")
+@click.argument("entity_name")
+@click.option(
+    "--ollama",
+    "with_ollama",
+    is_flag=True,
+    help="Start local Ollama if needed (does not pull models; use --pull-models to fetch).",
+)
+@click.option(
+    "--pull-models",
+    is_flag=True,
+    help="Run ollama pull for configured models (optional; combine with --ollama).",
+)
+def cmd_run(entity_name: str, with_ollama: bool, pull_models: bool) -> None:
+    """Start entity with daemon and configured platforms."""
+    _prepare_ollama_cli(entity_name, with_ollama, pull_models)
+    try:
+        asyncio.run(_run(entity_name, worker_mode=False))
+    except KeyboardInterrupt:
+        click.echo("\nStopped.", err=True)
+    finally:
+        shutdown_spawned_ollama()
+
+
+@cli.command("stop")
+@click.option(
+    "--skip-gateway",
+    is_flag=True,
+    help="Do not run the gateway helper script off (home stack: cloudflared + gateway + Ollama).",
+)
+@click.option("--tunnel-name", default="replicants-inference", show_default=True)
+@click.option(
+    "--leave-ollama-running",
+    is_flag=True,
+    help="Do not terminate Ollama OS processes; forward to gateway off script when applicable.",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="List processes that would be stopped; do not kill or run gateway off.",
+)
+def cmd_stop(
+    skip_gateway: bool,
+    tunnel_name: str,
+    leave_ollama_running: bool,
+    dry_run: bool,
+) -> None:
+    """Stop local Replicants processes, optional home gateway stack, and all Ollama OS processes."""
+    from replicants.utils.stack_stop import stop_all_ollama_processes, stop_local_replicants_processes
+
+    stop_local_replicants_processes(dry_run=dry_run, log=click.echo)
+    if dry_run:
+        if skip_gateway:
+            click.echo("Dry run: would skip gateway off (--skip-gateway).")
+        elif gateway_script_available():
+            click.echo(
+                f"Dry run: would run gateway off (tunnel={tunnel_name!r}"
+                f"{', leave Ollama running (script only)' if leave_ollama_running else ''})."
+            )
+        else:
+            click.echo("Dry run: gateway helper script not available — would skip gateway off.")
+        if leave_ollama_running:
+            click.echo("Dry run: would leave Ollama OS processes running (--leave-ollama-running).")
+        else:
+            stop_all_ollama_processes(dry_run=True, log=click.echo)
+        return
+
+    if not skip_gateway and gateway_script_available():
+        args = ["-TunnelName", tunnel_name]
+        if leave_ollama_running:
+            args.append("-LeaveOllamaRunning")
+        rc = _run_gateway_script_subprocess("off", args)
+        if rc != 0:
+            click.echo(
+                f"gateway off exited with code {rc} (nothing running or script reported an error).",
+                err=True,
+            )
+        else:
+            click.echo("Home gateway stack stopped (gateway off).")
+    elif not skip_gateway:
+        click.echo(
+            "Gateway helper script not available (install bash + scripts/gateway.sh on macOS/Linux, "
+            "or scripts/gateway.ps1 on Windows). Skipping gateway off; stopping Replicants + Ollama processes only.",
+            err=True,
+        )
+
+    if skip_gateway:
+        click.echo("Left gateway script untouched (--skip-gateway).")
+
+    if leave_ollama_running:
+        click.echo("Left Ollama running (--leave-ollama-running).")
+    else:
+        stop_all_ollama_processes(dry_run=False, log=click.echo)
+
+
+async def _run(entity_name: str, *, worker_mode: bool = False) -> None:
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    for w in validate_entity_env(ec):
+        click.echo(f"Warning: {w}", err=True)
+    _worker_quiet = (
+        "replicants.presence.telegram",
+        "replicants.presence.discord",
+        "replicants.inference_gateway",
+        "telegram",
+        "httpx",
+        "httpcore",
+    ) if worker_mode else ()
+    setup_logging(
+        ec.name,
+        ec.harness.logging.level,
+        ec.log_path(),
+        ec.harness.logging.format,
+        console_quiet=_worker_quiet,
+    )
+    ent = Entity(ec)
+    try:
+        inf = await asyncio.wait_for(check_inference(ec, ent.client), timeout=8.0)
+        if not inf.get("ok"):
+            click.echo(f"Warning: inference not healthy: {inf}", err=True)
+    except TimeoutError:
+        click.echo("Warning: inference check timed out (continuing startup).", err=True)
+    except Exception as e:
+        click.echo(f"Warning: inference check failed: {e}", err=True)
+
+    daemon = PresenceDaemon(ent)
+
+    platforms: list = []
+    discord_p: DiscordPlatform | None = None
+    telegram_p: TelegramPlatform | None = None
+
+    for pl in ec.presence.platforms:
+        t = (pl.get("type") or "").lower()
+        if t == "discord":
+            tok = token_from_config(pl.get("token_env", "DISCORD_TOKEN"))
+            if not tok:
+                click.echo("Discord token missing; skipping Discord.", err=True)
+                continue
+            chans = pl.get("channels") or []
+            proactive_raw = pl.get("proactive_channel_id")
+            proactive_cid: int | None = None
+            if proactive_raw is not None:
+                try:
+                    proactive_cid = int(proactive_raw)
+                except (TypeError, ValueError):
+                    proactive_cid = None
+            discord_p = DiscordPlatform(
+                tok,
+                [str(c) for c in chans],
+                entity=ent,
+                proactive_channel_id=proactive_cid,
+            )
+            platforms.append(discord_p)
+            ent.register_platform("discord", discord_p)
+        elif t == "telegram":
+            tok = token_from_config(pl.get("token_env", "TELEGRAM_TOKEN"))
+            if not tok:
+                click.echo("Telegram token missing; skipping Telegram.", err=True)
+                continue
+            raw_allow = pl.get("allowed_user_ids")
+            allow_users: set[int] | None = None
+            if isinstance(raw_allow, list) and len(raw_allow) > 0:
+                allow_users = {int(x) for x in raw_allow}
+            raw_chats = pl.get("allowed_chat_ids")
+            allow_chats: set[int] | None = None
+            if isinstance(raw_chats, list) and len(raw_chats) > 0:
+                allow_chats = {int(x) for x in raw_chats}
+            op_users = merge_telegram_operator_user_ids(pl.get("operator_user_ids"))
+            raw_cu = pl.get("concurrent_updates", 1)
+            try:
+                tg_concurrent_updates = max(1, min(256, int(raw_cu)))
+            except (TypeError, ValueError):
+                tg_concurrent_updates = 1
+            raw_pt = pl.get("poll_timeout", 20.0)
+            try:
+                tg_poll_timeout = max(1.0, min(30.0, float(raw_pt)))
+            except (TypeError, ValueError):
+                tg_poll_timeout = 20.0
+            raw_pi = pl.get("poll_interval", 0.35)
+            try:
+                tg_poll_interval = max(0.0, min(2.0, float(raw_pi)))
+            except (TypeError, ValueError):
+                tg_poll_interval = 0.35
+            telegram_p = TelegramPlatform(
+                tok,
+                entity=ent,
+                app_version=_app_version(),
+                allowed_user_ids=allow_users,
+                allowed_chat_ids=allow_chats,
+                operator_user_ids=op_users,
+                concurrent_updates=tg_concurrent_updates,
+                poll_timeout=tg_poll_timeout,
+                poll_interval=tg_poll_interval,
+            )
+            platforms.append(telegram_p)
+            ent.register_platform("telegram", telegram_p)
+
+    cli_p = CLIPlatform(ent, app_version=_app_version(), immersive=False)
+    ent.register_platform("cli", cli_p)
+    has_cli = (
+        any((p.get("type") or "").lower() == "cli" for p in ec.presence.platforms)
+        and not worker_mode
+    )
+
+    async def proactive_fanout(message: str) -> None:
+        sent = False
+        if discord_p:
+            try:
+                await discord_p.send_proactive_default(message)
+                sent = True
+            except Exception:
+                pass
+        if telegram_p:
+            try:
+                await telegram_p.send_proactive_default(message)
+                sent = True
+            except Exception:
+                pass
+        if not sent:
+            click.echo(f"\n[{ec.name}]: {message}\n")
+
+    ent.register_proactive_sink(proactive_fanout)
+
+    async def route_reply(inp, text: str):
+        meta = ent.voice_ctl.meta_for_response(
+            ent.emotions.get_state(),
+            len(text),
+            inp.platform,
+        )
+        delay = min(3.0, meta.typing_delay_seconds)
+        if inp.platform == "telegram" and telegram_p:
+            await telegram_p.send_typing(int(inp.channel))
+            await asyncio.sleep(delay)
+        else:
+            await asyncio.sleep(delay)
+        if inp.platform == "discord" and discord_p:
+            await discord_p.send_plain_chunks(inp.channel, text, chunk_pause=meta.chunk_pause)
+            await discord_p.sync_emotion_presence(ent.emotions.get_state().primary)
+        elif inp.platform == "telegram" and telegram_p:
+            await telegram_p.send_plain_chunks(inp.channel, text, pause=meta.chunk_pause)
+
+    async def _telegram_typing_worker(chat_id: int, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            await telegram_p.send_typing(chat_id)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=4.5)
+            except asyncio.TimeoutError:
+                continue
+
+    async def on_inp(inp):
+        stream = cli_p.stream_delta if inp.platform == "cli" else None
+        reply_pf = None
+        if inp.platform == "cli":
+            reply_pf = cli_p
+        elif inp.platform == "discord":
+            reply_pf = discord_p
+        elif inp.platform == "telegram":
+            reply_pf = telegram_p
+        stop_typing = asyncio.Event()
+        stop_busy = asyncio.Event()
+        typing_task: asyncio.Task[None] | None = None
+        busy_task: asyncio.Task[None] | None = None
+        if inp.platform == "telegram" and telegram_p:
+            typing_task = asyncio.create_task(
+                _telegram_typing_worker(int(inp.channel), stop_typing)
+            )
+            reply_to_mid = None
+            meta = inp.metadata if isinstance(inp.metadata, dict) else {}
+            raw_mid = meta.get("telegram_message_id")
+            if raw_mid is not None:
+                try:
+                    reply_to_mid = int(raw_mid)
+                except (TypeError, ValueError):
+                    reply_to_mid = None
+            if telegram_p.busy_indicator_enabled_for(int(inp.channel)):
+                busy_task = asyncio.create_task(
+                    telegram_p.run_busy_indicator(
+                        int(inp.channel),
+                        reply_to_message_id=reply_to_mid,
+                        stop=stop_busy,
+                    )
+                )
+        try:
+            try:
+                reply, needs_platform_route = await ent.perceive(
+                    inp, stream=stream, reply_platform=reply_pf
+                )
+            except Exception as e:
+                reply = format_user_visible_failure(e)
+                needs_platform_route = True
+        finally:
+            stop_typing.set()
+            if typing_task is not None:
+                typing_task.cancel()
+                try:
+                    await typing_task
+                except asyncio.CancelledError:
+                    pass
+            stop_busy.set()
+            if busy_task is not None:
+                try:
+                    await busy_task
+                except Exception:
+                    pass
+        if inp.platform == "cli":
+            return reply
+        try:
+            if needs_platform_route and reply:
+                await route_reply(inp, reply)
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+        return ""
+
+    for p in platforms:
+        await p.on_message(on_inp)
+        await p.connect()
+
+    # After messaging platforms are live — avoids aiosqlite + PTB fighting the loop at startup.
+    await daemon.start()
+
+    if has_cli:
+        await cli_p.connect()
+        await cli_p.on_message(on_inp)
+        try:
+            await cli_p.run_repl()
+        finally:
+            await _graceful_run_shutdown(daemon, platforms + [cli_p], ent)
+    else:
+        click.echo(f"{ec.name} running (no CLI). Ctrl+C to stop.")
+        try:
+            await _wait_until_stopped()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await _graceful_run_shutdown(daemon, platforms, ent)
+
+
+@cli.command("status")
+@click.argument("entity_name")
+def cmd_status(entity_name: str) -> None:
+    """Show emotional state, drives, paths."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    setup_logging(ec.name, ec.harness.logging.level, None, "console")
+    ent = Entity(ec)
+
+    async def _show():
+        s = ent.emotions.get_state()
+        click.echo(f"Entity: {ec.name}")
+        click.echo(f"Emotion: {s.primary.value} ({s.intensity:.2f})")
+        click.echo("Drives:")
+        for d in ent.drives.all_drives():
+            click.echo(f"  {d.name}: {d.level:.2f} (threshold {d.threshold})")
+        du = ec.database_url()
+        click.echo(f"DB: {du if du else ec.db_path()}")
+        click.echo(f"Dormant: {ent.dormant}")
+        await ent.shutdown()
+
+    asyncio.run(_show())
+
+
+@cli.command("evolve")
+@click.argument("entity_name")
+def cmd_evolve(entity_name: str) -> None:
+    """Force one trait evolution cycle."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    setup_logging(ec.name, ec.harness.logging.level, None, "console")
+    ent = Entity(ec)
+
+    async def _go():
+        c = await ent.evolution.run_cycle(
+            {"anxiety_trend": 0.15, "deep_conversations": 5}
+        )
+        click.echo(json.dumps(c, indent=2))
+        await ent.shutdown()
+
+    asyncio.run(_go())
+
+
+@cli.command("knowledge")
+@click.argument("entity_name")
+def cmd_knowledge(entity_name: str) -> None:
+    """Create (if missing) and open the entity's knowledge.md in $EDITOR (default notepad / nano)."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    kpath = Path(ec.knowledge_path()).expanduser()
+    kpath.parent.mkdir(parents=True, exist_ok=True)
+    if not kpath.is_file():
+        kpath.write_text(KNOWLEDGE_STARTER_TEMPLATE, encoding="utf-8", newline="\n")
+    editor = (os.environ.get("EDITOR") or "").strip()
+    if not editor:
+        if os.name == "nt":
+            subprocess.run(["notepad", str(kpath)], check=False)
+        else:
+            nano = shutil.which("nano") or "nano"
+            subprocess.run([nano, str(kpath)], check=False)
+        return
+    try:
+        parts = shlex.split(editor, posix=os.name != "nt") + [str(kpath)]
+    except ValueError as e:
+        raise click.ClickException(f"Could not parse EDITOR: {e}") from e
+    subprocess.run(parts, check=False)
+
+
+@cli.command("journal")
+@click.argument("entity_name")
+def cmd_journal(entity_name: str) -> None:
+    """Open the entity's journal.md in $EDITOR (append-only reflections from routines)."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    jpath = Path(ec.journal_path()).expanduser()
+    jpath.parent.mkdir(parents=True, exist_ok=True)
+    if not jpath.is_file():
+        jpath.write_text("# journal\n\n", encoding="utf-8", newline="\n")
+    editor = (os.environ.get("EDITOR") or "").strip()
+    if not editor:
+        if os.name == "nt":
+            subprocess.run(["notepad", str(jpath)], check=False)
+        else:
+            nano = shutil.which("nano") or "nano"
+            subprocess.run([nano, str(jpath)], check=False)
+        return
+    try:
+        parts = shlex.split(editor, posix=os.name != "nt") + [str(jpath)]
+    except ValueError as e:
+        raise click.ClickException(f"Could not parse EDITOR: {e}") from e
+    subprocess.run(parts, check=False)
+
+
+@cli.command("recall")
+@click.argument("entity_name")
+@click.argument("query")
+@click.option(
+    "--database-url",
+    "cli_database_url",
+    envvar="DATABASE_URL",
+    default=None,
+    help="Postgres URL (same as Railway worker DATABASE_URL). Without it, CLI uses local SQLite.",
+)
+def cmd_recall(entity_name: str, query: str, cli_database_url: str | None) -> None:
+    """Search episodic memories by semantic similarity."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    _apply_cli_database_url(cli_database_url)
+    _echo_cli_database_target(ec)
+    _warn_if_hybrid_without_postgres(ec)
+    ent = Entity(ec)
+
+    async def _recall():
+        try:
+            async with ent.store.session() as db:
+                qe = await ent.client.embed(ec.harness.models.embedding, query)
+                if not qe:
+                    click.echo("Could not embed query (inference backend unavailable?).")
+                    return
+                pairs = await ent.store.search_episodes_by_embedding(db, qe, limit=8)
+                for eid, score in pairs:
+                    click.echo(f"{score:.3f}  {eid}")
+        finally:
+            try:
+                await asyncio.shield(ent.shutdown())
+            except BaseException:
+                pass
+
+    asyncio.run(_recall())
+
+
+@cli.command("seeds")
+@click.argument("entity_name")
+@click.option("--last", default=50, show_default=True, type=int, help="Max recent seed_log rows.")
+@click.option(
+    "--database-url",
+    "cli_database_url",
+    envvar="DATABASE_URL",
+    default=None,
+    help="Postgres URL (same as Railway worker DATABASE_URL). Without it, CLI uses local SQLite.",
+)
+def cmd_seeds(entity_name: str, last: int, cli_database_url: str | None) -> None:
+    """Show recent exogenous noise seeds and whether GEN consumed them."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    _apply_cli_database_url(cli_database_url)
+    _echo_cli_database_target(ec)
+    _warn_if_hybrid_without_postgres(ec)
+    ent = Entity(ec)
+
+    async def _show():
+        from replicants.memory.seed_log import list_recent_seeds
+
+        try:
+            async with ent.store.session() as db:
+                rows = await list_recent_seeds(db, entity_name=ec.name, limit=max(1, last))
+            for r in rows:
+                click.echo(
+                    f"{r['tick_timestamp']:.0f}  {r['source_type']}  consumed={r['consumed']}  "
+                    f"{r['seed_text'][:120]!r}"
+                )
+                if r.get("fragment_produced"):
+                    click.echo(f"    -> fragments: {r['fragment_produced'][:200]}")
+        finally:
+            try:
+                await asyncio.shield(ent.shutdown())
+            except BaseException:
+                pass
+
+    asyncio.run(_show())
+
+
+@cli.command("trace")
+@click.argument("entity_name")
+@click.option("--last", default=30, show_default=True, type=int, help="Max rows with produced fragments.")
+@click.option(
+    "--database-url",
+    "cli_database_url",
+    envvar="DATABASE_URL",
+    default=None,
+    help="Postgres URL (same as Railway worker DATABASE_URL). Without it, CLI uses local SQLite.",
+)
+def cmd_trace(entity_name: str, last: int, cli_database_url: str | None) -> None:
+    """Show seed → fragment audit rows (organism-test trail)."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    _apply_cli_database_url(cli_database_url)
+    _echo_cli_database_target(ec)
+    _warn_if_hybrid_without_postgres(ec)
+    ent = Entity(ec)
+
+    async def _show():
+        from replicants.memory.seed_log import list_trace_rows
+
+        try:
+            async with ent.store.session() as db:
+                rows = await list_trace_rows(db, entity_name=ec.name, limit=max(1, last))
+            for r in rows:
+                click.echo(
+                    f"trace={r['trace_id']}  {r['source_type']}  "
+                    f"seed={r['seed_text'][:100]!r}"
+                )
+                click.echo(f"  fragments: {r.get('fragment_produced', '')[:240]}")
+                click.echo(f"  tags: {r.get('fragment_tags', [])}")
+        finally:
+            try:
+                await asyncio.shield(ent.shutdown())
+            except BaseException:
+                pass
+
+    asyncio.run(_show())
+
+
+@cli.command("worker")
+@click.argument("entity_name")
+def cmd_worker(entity_name: str) -> None:
+    """Run platforms + daemon without CLI (use on Railway as replicants-worker)."""
+    if not (entity_name or "").strip():
+        raise click.ClickException(
+            "Missing entity name (got empty string). For Railway: set REPLICANTS_ENTITY "
+            "(e.g. canary) on the worker service."
+        )
+    try:
+        asyncio.run(_run(entity_name, worker_mode=True))
+    except KeyboardInterrupt:
+        click.echo("\nStopped.", err=True)
+
+
+@cli.command("api")
+@click.option("--host", default="0.0.0.0", show_default=True)
+@click.option("--port", default=8080, show_default=True, type=int)
+def cmd_api(host: str, port: int) -> None:
+    """HTTP health service (Railway replicants-api). Requires: pip install 'replicants[api]'"""
+    try:
+        import uvicorn
+    except ImportError as e:
+        raise click.ClickException(
+            "Missing uvicorn/fastapi. Install: pip install 'replicants[api]'"
+        ) from e
+    from replicants.apps.api import create_api_app
+
+    uvicorn.run(create_api_app(), host=host, port=port, log_level="info")
+
+
+@cli.command("wipe")
+@click.argument("entity_name")
+@click.option(
+    "--yes",
+    "skip_confirm",
+    is_flag=True,
+    help="Skip confirmation (non-interactive).",
+)
+def cmd_wipe(entity_name: str, skip_confirm: bool) -> None:
+    """Delete in-memory chat turns and all SQLite memory (episodes, people, beliefs, narrative, etc.)."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    db_path = ec.db_path()
+    if not skip_confirm:
+        click.echo(
+            f"This clears conversation context and wipes the memory database for {ec.name!r}:\n  {db_path}",
+            err=True,
+        )
+        if not click.confirm("Proceed?"):
+            raise click.Abort()
+    setup_logging(ec.name, ec.harness.logging.level, None, "console")
+    ent = Entity(ec)
+
+    async def _wipe():
+        await ent.wipe_experiential_state()
+        try:
+            await asyncio.shield(ent.shutdown())
+        except BaseException:
+            pass
+
+    asyncio.run(_wipe())
+    click.echo(f"Wiped {ec.name} (DB + rolling chat + inner voice; YAML traits restored from file).")
+
+
+@cli.command("soma-reset")
+@click.argument("entity_name")
+@click.option(
+    "--yes",
+    "skip_confirm",
+    is_flag=True,
+    help="Skip confirmation (non-interactive / Railway).",
+)
+def cmd_soma_reset(entity_name: str, skip_confirm: bool) -> None:
+    """Reset soma bars to YAML initials, clear GEN noise + affects; write DB + soma-state.json + body.md.
+
+    Hybrid / Railway: run once against the same DATABASE_URL and workspace as the worker
+    (e.g. ``railway run --service replicants-worker -- replicant soma-reset YOUR_ENTITY --yes``),
+    then restart the worker so the running process reloads tonic state.
+    """
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    if not skip_confirm:
+        click.echo(
+            f"Reset soma (bars, noise, affects) for {ec.name!r} to its YAML baseline "
+            f"and persist to DB + {ec.soma_dir()}.",
+            err=True,
+        )
+        if not click.confirm("Proceed?"):
+            raise click.Abort()
+    setup_logging(ec.name, ec.harness.logging.level, None, "console")
+    ent = Entity(ec)
+
+    async def _reset():
+        await ent.reset_soma_baseline()
+        try:
+            await asyncio.shield(ent.shutdown())
+        except BaseException:
+            pass
+
+    asyncio.run(_reset())
+    click.echo(f"Soma baseline reset for {ec.name}. Restart the worker if it is already running.")
+
+
+@cli.command("export")
+@click.argument("entity_name")
+@click.argument("dest_dir", type=click.Path())
+def cmd_export(entity_name: str, dest_dir: str) -> None:
+    """Copy entity YAML + SQLite DB to a folder."""
+    harness = load_harness_config()
+    ec = load_entity_config(entity_name, harness)
+    src_yaml = project_configs_dir() / "entities" / f"{entity_name}.yaml"
+    d = Path(dest_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src_yaml, d / f"{entity_name}.yaml")
+    db = Path(ec.db_path())
+    if db.exists():
+        shutil.copy2(db, d / "memory.db")
+    click.echo(f"Exported to {d}")
+
+
+@cli.command("update")
+@click.option(
+    "--no-pip",
+    "skip_pip",
+    is_flag=True,
+    help="After a git fast-forward, skip ``pip install -e .`` (git checkouts only).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Print what would run without fetching, merging, or installing.",
+)
+def cmd_update(skip_pip: bool, dry_run: bool) -> None:
+    """Update this install from the public GitHub repository (git or pip)."""
+
+    def _log(msg: str) -> None:
+        click.echo(msg)
+
+    res = perform_self_update(
+        pip_reinstall=not skip_pip,
+        dry_run=dry_run,
+        log=_log,
+    )
+    if res.get("ok"):
+        if dry_run:
+            click.echo("Dry run finished.")
+        elif res.get("method") == "git":
+            for m in res.get("messages") or ():
+                click.echo(m)
+            pip_r = res.get("pip")
+            if isinstance(pip_r, dict) and pip_r.get("ok") and (pip_r.get("output") or "").strip():
+                click.echo((pip_r.get("output") or "").strip())
+            click.echo("Update complete. Restart running workers or daemons to load new code.")
+        else:
+            out = (res.get("output") or "").strip()
+            if out:
+                click.echo(out)
+            click.echo("Update complete. Restart running workers or daemons to load new code.")
+        return
+
+    err = str(res.get("error") or "update failed")
+    raise click.ClickException(err)
+
+
+@cli.command("version")
+def cmd_version() -> None:
+    """Print the replicants version (same as ``replicant --version``)."""
+    click.echo(REPLICANTS_VERSION)
+
+
+@cli.command("import")
+@click.argument("bundle_dir", type=click.Path(exists=True))
+def cmd_import(bundle_dir: str) -> None:
+    """Import entity YAML + memory.db into configs and ~/.replicants."""
+    b = Path(bundle_dir)
+    yamls = list(b.glob("*.yaml"))
+    if not yamls:
+        raise click.ClickException("No YAML in bundle")
+    y = yamls[0]
+    name = y.stem
+    ent_dir = project_configs_dir() / "entities"
+    ent_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(y, ent_dir / f"{name}.yaml")
+    mem = b / "memory.db"
+    if mem.exists():
+        harness = load_harness_config()
+        ec = load_entity_config(name, harness)
+        dest = Path(ec.db_path())
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(mem, dest)
+    click.echo(f"Imported entity {name}")
+
+
+@cli.command('desktop')
+@click.option('--entity', 'entity_name', default=None, help='Use an existing entity and its soma/memory; default is the unnamed desktop demo.')
+@click.option('--headless', is_flag=True, help='Run the local brain; leave overlay launch to the tray or a separate process.')
+def cmd_desktop(entity_name: str | None, headless: bool) -> None:
+    """Run a local Replicant brain with the authenticated desktop body adapter."""
+    from replicants.desktop.runtime import run_desktop
+    try:
+        asyncio.run(run_desktop(entity_name, headless=headless))
+    except KeyboardInterrupt:
+        pass
+    except (ValueError, RuntimeError) as exc:
+        raise click.ClickException(str(exc)) from exc
+
+
+@cli.command('birth')
+@click.option('--temperament', type=click.Choice(['curious', 'shy', 'social', 'calm', 'roll']), default=None,
+              help='Skip the conception screen and choose this temperament.')
+@click.option('--palette', default='pearl', help='pearl, mint, sand, lavender, or a hex color.')
+@click.option('--gestation', type=click.FloatRange(5, 86400), default=90, help='Gestation seconds before curiosity can bring first breath.')
+@click.option('--output', type=click.Path(path_type=Path), default=None, help='New .replicant path; existing files are never overwritten.')
+@click.option('--headless', is_flag=True, help='Leave overlay launch to an existing body or a test runner.')
+def cmd_birth(temperament, palette, gestation, output, headless):
+    """Conceive a new, unnamed being. It gestates and wakes from its own body."""
+    from replicants.desktop.life import birth
+    try: asyncio.run(birth(temperament=temperament, palette=palette, gestation_seconds=gestation, output=output, headless=headless))
+    except KeyboardInterrupt: pass
+    except (ValueError, RuntimeError, OSError) as exc: raise click.ClickException(str(exc)) from exc
+
+
+@cli.command('wake')
+@click.argument('file', type=click.Path(path_type=Path))
+@click.option('--headless', is_flag=True, help='Run the being without launching another overlay.')
+def cmd_wake(file, headless):
+    """Verify and wake a portable .replicant; refuse an already-awake identity."""
+    from replicants.desktop.life import wake_file
+    try: asyncio.run(wake_file(file, headless=headless))
+    except KeyboardInterrupt: pass
+    except (ValueError, RuntimeError, OSError) as exc: raise click.ClickException(str(exc)) from exc
+
+
+def main() -> None:
+    cli()
+
+
+if __name__ == "__main__":
+    main()

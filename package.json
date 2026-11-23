@@ -1,0 +1,8 @@
+{
+  "name": "replicants-ops",
+  "private": true,
+  "scripts": {
+    "deploy:canary": "railway up -d -s replicants-worker && railway up -d -s replicants-api",
+    "ollama:reset": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\ollama-reset.ps1"
+  }
+}

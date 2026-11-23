@@ -1,0 +1,9 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "buildCommand": "pip install '.[railway,api,full]'"
+  },
+  "deploy": {
+    "startCommand": "/bin/sh -c 'if [ \"$REPLICANTS_RAILWAY_ROLE\" = \"api\" ]; then exec /app/docker/entrypoint-railway.sh -m replicants.main api --host 0.0.0.0 --port \"${PORT:-8080}\"; elif [ -n \"$REPLICANTS_ENTITY\" ]; then exec /app/docker/entrypoint-railway.sh -m replicants.main worker \"$REPLICANTS_ENTITY\"; else echo \"Railway: set REPLICANTS_RAILWAY_ROLE=api for the API service, or set REPLICANTS_ENTITY for the worker.\" >&2; exit 1; fi'"
+  }
+}

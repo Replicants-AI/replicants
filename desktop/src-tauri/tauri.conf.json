@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Replicants", "version": "0.3.0-beta.2", "identifier": "digital.replicants.desktop",
+  "build": { "beforeDevCommand": "npm run dev", "beforeBuildCommand": "npm run build", "devUrl": "http://127.0.0.1:1420", "frontendDist": "../dist" },
+  "app": {
+    "windows": [{ "label": "overlay", "title": "Replicants", "width": 800, "height": 600, "transparent": true, "decorations": false, "alwaysOnTop": true, "skipTaskbar": true, "resizable": false, "shadow": false, "visible": false, "backgroundThrottling": "disabled" }],
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*" }
+  },
+  "bundle": { "active": true, "targets": ["nsis"], "shortDescription": "A local life on your desktop",
+    "resources": { "binaries/backend/": "backend/" },
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true }, "nsis": { "installMode": "currentUser", "displayLanguageSelector": false } },
+    "icon": ["icons/icon.ico", "icons/icon.png"] }
+}

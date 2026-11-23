@@ -1,0 +1,5 @@
+{
+  "name": "Sea Glass",
+  "rows": [".AABBAA.", ".ABSSBS.", ".ASESES.", ".ASSSBS.", "CCDDCCC.", "SCCDDCCS", ".NN..NN."],
+  "pal": {"A": "#163C4B", "B": "#68B7AE", "S": "#E8DCC5", "E": "#1B2530", "C": "#3B7684", "D": "#DA9674", "N": "#20394C"}
+}

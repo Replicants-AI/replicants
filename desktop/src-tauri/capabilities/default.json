@@ -1,0 +1,6 @@
+{
+  "identifier": "desktop-local",
+  "description": "Local app windows; native commands never expose screen content or window titles.",
+  "windows": ["overlay", "mock", "inspector", "birth", "home", "conversation", "settings", "room"],
+  "permissions": ["core:default", "core:window:allow-set-focus"]
+}

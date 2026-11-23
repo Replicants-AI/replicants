@@ -1,0 +1,1288 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Replicant Motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=Geist+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a dark pixel workbench. A live desktop stage on top, the filterable animation library as a two-column grid of cards below. Single dark theme by choice. */
+:root {
+  --bg: #0B0B0F;
+  --panel: #131319;
+  --panel-2: #1A1A22;
+  --line: #272731;
+  --fg: #E8E8EE;
+  --muted: #9A9AA8;
+  --accent: #8FC2FF;
+  --font-display: "Silkscreen", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-body: "Geist Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.55; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 72px; display: flex; flex-direction: column; gap: 48px; }
+header { display: flex; flex-direction: column; gap: 12px; max-width: 70ch; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 400; font-size: clamp(30px, 6vw, 48px); line-height: 1; margin: 0; text-wrap: balance; letter-spacing: .5px; }
+h2 { font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.1; margin: 0; }
+p { margin: 0; }
+.lede { color: var(--muted); }
+section { display: flex; flex-direction: column; gap: 16px; }
+.sec-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.sec-head > div { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 72ch; }
+.sec-head p { color: var(--muted); }
+button { font: inherit; color: inherit; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stage-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; justify-content: center; overflow: hidden; }
+canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; }
+#stage { touch-action: none; cursor: default; }
+.below { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 820px) { .below { grid-template-columns: minmax(0, 1fr); } }
+.roster { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; align-content: start; }
+.rbtn { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rbtn:hover { border-color: var(--muted); }
+.rbtn[aria-pressed="true"] { border-color: var(--accent); background: var(--panel-2); }
+.rname { font-family: var(--font-display); font-size: 13px; line-height: 1.1; }
+.rstate { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meter { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); width: 50%; }
+.soma { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.soma-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.soma-head .rname { font-size: 16px; }
+.soma-head span { font-size: 12px; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.field output { font-variant-numeric: tabular-nums; color: var(--fg); }
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.hint { font-size: 12px; color: var(--muted); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.fbtn { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; font-size: 12px; color: var(--muted); }
+.fbtn span { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; }
+.fbtn:hover { border-color: var(--muted); color: var(--fg); }
+.fbtn[aria-pressed="true"] { background: var(--panel-2); border-color: var(--accent); color: var(--fg); }
+.lib { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .lib { grid-template-columns: minmax(0, 1fr); } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card-name { font-family: var(--font-display); font-size: 17px; line-height: 1.1; display: flex; gap: 8px; align-items: baseline; }
+.card-name small { font-family: var(--font-body); font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.trig { font-size: 12px; color: var(--muted); }
+.cbox { display: flex; justify-content: center; background: #0E0E14; border-radius: 8px; padding-block: 12px; }
+.card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; color: var(--muted); }
+.meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cast { font-size: 12px; color: var(--fg); }
+.anat { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+.anat-grid { display: grid; grid-template-columns: repeat(8, 26px); gap: 2px; flex-shrink: 0; }
+.anat-grid span { width: 26px; height: 26px; border-radius: 3px; }
+.anat-legend { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 24px; flex: 1; min-width: 0; }
+.anat-legend li { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--muted); }
+.anat-legend li b { color: var(--fg); font-weight: 600; }
+.anat-legend i { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; margin-top: 3px; }
+@media (max-width: 420px) { .anat-grid { grid-template-columns: repeat(8, 20px); } .anat-grid span { width: 20px; height: 20px; } }
+</style>
+
+<main class="wrap">
+  <header>
+    <span class="eyebrow">Replicants · motion study</span>
+    <h1>Replicant Motion</h1>
+    <p class="lede">Eighteen replicants and <span id="animCount">eighty-plus</span> animations. Every replicant is drawn on the same 8×7 anatomy, and every animation is written against that anatomy, never against a character. Any new replicant drawn on the grid gets all of them for free. The desktop below runs a simple life loop that picks what each replicant does from its energy, mood and social drive.</p>
+  </header>
+
+  <section aria-labelledby="desk-title">
+    <div class="sec-head">
+      <div>
+        <h2 id="desk-title">Desktop</h2>
+        <p>They boot up when the page opens, some on top of the three windows. Drag a replicant and let go to drop it, or fling it to throw it. Short drops get a squash. Longer drops flail or tumble, and the landing is picked at random: splat, pancake, head stuck in the floor, roll, legs in the air, bounce, butt thud, or a rare hero landing. A hard throw into the screen edge usually bounces off; once in a while it splats against the wall and slides down. Tap one and it reacts.</p>
+      </div>
+      <button class="btn" id="toggle" type="button">Pause</button>
+    </div>
+    <div class="stage-wrap" id="stageWrap">
+      <canvas id="stage" role="img" aria-label="Seven pixel replicants living on a desktop taskbar"></canvas>
+    </div>
+    <div class="below">
+      <div class="roster" id="roster" aria-label="Replicants"></div>
+      <div class="soma">
+        <div class="soma-head"><span class="rname" id="somaName">Classic</span><span id="somaState">Idle</span></div>
+        <div class="field">
+          <label for="energy">Energy <output id="energyOut" for="energy">0%</output></label>
+          <input type="range" id="energy" min="0" max="100" value="50">
+        </div>
+        <div class="field">
+          <label for="mood">Mood <output id="moodOut" for="mood">0%</output></label>
+          <input type="range" id="mood" min="0" max="100" value="50">
+        </div>
+        <div class="field">
+          <label for="social">Social <output id="socialOut" for="social">0%</output></label>
+          <input type="range" id="social" min="0" max="100" value="50">
+        </div>
+        <p class="hint">Low energy: sits, snacks, recharges, then falls asleep in one of five ways. High mood and energy: runs, dances, does jumping jacks. Low mood: sulks, cries or fumes. High social: waves, claps and follows your cursor.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="anat-title">
+    <div class="sec-head">
+      <div>
+        <h2 id="anat-title">Anatomy</h2>
+        <p>The contract every replicant and every animation shares. Animations only move these parts; each replicant's own colors ride along.</p>
+      </div>
+    </div>
+    <div class="anat">
+      <div class="anat-grid" id="anatGrid" role="img" aria-label="The 8 by 7 replicant grid colored by body part"></div>
+      <ul class="anat-legend" id="anatLegend"></ul>
+    </div>
+  </section>
+
+  <section aria-labelledby="lib-title">
+    <div class="sec-head">
+      <div>
+        <h2 id="lib-title">Animation library</h2>
+        <p>Each animation is defined once and plays on seven replicants at a time, started at random points so they never move in lockstep. Shuffle the cast to see the same animations on other replicants.</p>
+        <p class="cast" id="cast"></p>
+      </div>
+      <button class="btn" id="shuffle" type="button">Shuffle cast</button>
+    </div>
+    <div class="filters" id="filters" role="group" aria-label="Filter animations"></div>
+    <div class="lib" id="lib"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // =====================================================================
+  // 1. ANATOMY: the contract every replicant and every animation shares.
+  // A replicant is an 8 x 7 grid that fills exactly this mask. Animations
+  // never name a character; they only move the parts defined here.
+  // =====================================================================
+  const MASK = [".######.", ".######.", ".######.", ".######.", "#######.", "########", ".##..##."];
+  const AN = {
+    eyes: [[2, 3], [2, 5]],   // blink, glance
+    lid: [2, 4],              // its color closes the eyes
+    sleeveBack: [4, 0], sleeveFront: [4, 6],
+    handBack: [5, 0], handFront: [5, 7],
+    legBack: [6, 1], legBack2: [6, 2]
+  };
+  // Regions used to color the lying and flattened templates (majority color wins)
+  const REGION = {
+    hair: [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [1, 1], [1, 2], [2, 1], [3, 1]],
+    face: [[1, 3], [1, 4], [1, 5], [1, 6], [2, 2], [2, 4], [2, 6], [3, 2], [3, 3], [3, 4], [3, 5], [3, 6]],
+    chest: [[4, 1], [4, 2], [4, 3], [4, 4], [4, 5], [4, 6]],
+    belly: [[5, 1], [5, 2], [5, 3], [5, 4], [5, 5], [5, 6]]
+  };
+
+  // =====================================================================
+  // 2. REPLICANTS: pure data. Any new one drawn on the mask just works.
+  // =====================================================================
+  const REPS = [
+    { name: "Classic", rows: [".HHHHHH.", ".HHSSSS.", ".HSESES.", ".HSSSSS.", "TTTTTTT.", "STTTTTTS", ".PP..PP."], pal: { H: "#6A4428", S: "#F1C09A", E: "#1B1B22", T: "#3D7BE0", P: "#3A4A70" } },
+    { name: "Long Hair", rows: [".HHHHHH.", ".HHHSSS.", ".HHESES.", ".HHSSSS.", "THTTTTT.", "STTTTTTS", ".PP..PP."], pal: { H: "#E8C45A", S: "#F3C7A5", E: "#1B1B22", T: "#E2558E", P: "#3B4C8C" } },
+    { name: "Astronaut", rows: [".WWWWWW.", ".WWVVVH.", ".WVeVeV.", ".wWWWWW.", "wWWBWWW.", "GwWWWWWG", ".GG..GG."], pal: { W: "#EDEFF4", w: "#B6BBC8", V: "#1E2F5C", H: "#8FC2FF", e: "#5C7BB8", B: "#3D7BE0", G: "#7B808E" } },
+    { name: "Punk", rows: [".PPPPPq.", ".KPSSSS.", ".KSDDdD.", ".KSSSSS.", "JjJRRJJ.", "SJJRRJJS", ".RK..RK."], pal: { P: "#FF3EA5", q: "#FF8CCB", K: "#1C1C22", S: "#F1C09A", D: "#0E0E12", d: "#5C6070", J: "#2C2C34", j: "#B8BCC8", R: "#D8303A" } },
+    { name: "Pirate", rows: [".RRRRRR.", ".rHSSSS.", ".HSESKS.", ".HBBBBB.", "wWWWWWW.", "SbbbYbbS", ".KK..KK."], pal: { R: "#D33A3A", r: "#9E2626", H: "#2A2420", S: "#D9996F", E: "#1B1B22", K: "#121216", B: "#2A2420", W: "#F2EEE4", w: "#C9C2B0", b: "#6A4428", Y: "#F2C230" } },
+    { name: "Royal", rows: [".YRYYBY.", ".Hyyyyy.", ".HSESES.", ".HSSSSS.", "PWKWWKW.", "SpPPPPPS", ".pp..pp."], pal: { Y: "#F2C230", R: "#E0334A", B: "#3D7BE0", y: "#C99A18", H: "#8C5A2B", S: "#F5CFAE", E: "#1B1B22", W: "#F4F4F4", K: "#1B1B22", P: "#7A4AD0", p: "#4E2E8E" } },
+    { name: "Gamer", rows: [".HKKHHH.", ".HKHSSS.", ".HNESES.", ".OSSSSS.", "oOOONOO.", "SOOOOWOS", ".PP..PP."], pal: { H: "#2EC4C4", K: "#1C1C22", N: "#4DF07A", S: "#F1C09A", E: "#1B1B22", O: "#3A3A56", o: "#26263A", W: "#EDEDED", P: "#3A4A70" } },
+    { name: "Beanie", rows: [".XXXXXX.", ".HHSSSS.", ".HSESES.", ".SSSSSS.", "TTTTTTT.", "STTTTTTS", ".PP..PP."], pal: { X: "#D9443A", H: "#3A2A1E", S: "#C98C62", E: "#1B1B22", T: "#2E8A57", P: "#55555F" } },
+    { name: "Bearded", rows: [".HHHHHH.", ".HHSSSS.", ".HSESES.", ".HBBBBB.", "TATATAT.", "SATATATS", ".PP..PP."], pal: { H: "#5A3A24", B: "#5A3A24", S: "#E3A57E", E: "#1B1B22", T: "#C0413A", A: "#7A1F1C", P: "#3A4A70" } },
+    { name: "Glasses", rows: [".HHHHHH.", ".HHSSSS.", ".HGLGLG.", ".HSSSSS.", "TTTTTTT.", "STTTTTTS", ".PP..PP."], pal: { H: "#8C5A2B", G: "#1B1B22", L: "#BFE6FF", S: "#F5CFAE", T: "#7A55D0", P: "#4A4A55" } },
+    { name: "Cap", rows: [".XXXXXX.", ".HHYYYY.", ".HSESES.", ".HSSSSS.", "TTTTTTT.", "STTTTTTS", ".PP..PP."], pal: { X: "#2F5FD0", Y: "#1F3F99", H: "#6B4226", S: "#8D5A3B", E: "#F4EDE4", T: "#F2C230", P: "#4A505C" } },
+    { name: "Curly", rows: [".HHHHHH.", ".HHHSSS.", ".HHESES.", ".HSSSSS.", "TTTTTTT.", "STTTTTTS", ".PP..PP."], pal: { H: "#2A201A", S: "#6B3F26", E: "#F4EDE4", T: "#F28A2E", P: "#3E3E48" } },
+    { name: "Suit", rows: [".HHHHHH.", ".HHSSSS.", ".HSESES.", ".HSSSSS.", "TTTWRWT.", "STTTRTTS", ".PP..PP."], pal: { H: "#4A3426", S: "#F0BE98", E: "#1B1B22", T: "#3E4658", W: "#F4F4F4", R: "#C8323A", P: "#3E4658" } },
+    { name: "Chef", rows: [".WWWWWW.", ".wwwwww.", ".HSESES.", ".HSSMMS.", "wWWWKWK.", "SwWWKWKS", ".KW..KW."], pal: { W: "#F4F4F6", w: "#CFCFD8", H: "#5A3A24", S: "#F1C09A", E: "#1B1B22", M: "#5A3A24", K: "#2A2A30" } },
+    { name: "Firefighter", rows: [".YYYRYY.", ".yyyyyy.", ".HSESES.", ".HSSSSS.", "tTTKTTT.", "GZZZZZZG", ".KK..KK."], pal: { Y: "#F2C230", R: "#D8303A", y: "#B88A14", H: "#3A2A1E", S: "#E3A57E", E: "#1B1B22", T: "#C9A066", t: "#A07C48", K: "#2A2A30", Z: "#D9F05A", G: "#3A3A42" } },
+    { name: "Detective", rows: [".FFFFFF.", ".BBBBBF.", ".HSESES.", ".CSSSSS.", "cCCWRCC.", "SCbbbbCS", ".PP..PP."], pal: { F: "#7A5A3A", B: "#2A2018", H: "#3A2A1E", S: "#F0BE98", E: "#1B1B22", C: "#C2A27A", c: "#9C8058", W: "#EDEDED", R: "#A0302E", b: "#7A6040", P: "#45454F" } },
+    { name: "Scientist", rows: [".WwWwWW.", ".WWgLgL.", ".WSESES.", ".WSSSSS.", "cCBBCRC.", "ScBBCCCS", ".PP..PP."], pal: { W: "#EEF0F4", w: "#BFC3CC", g: "#2A2A30", L: "#5BD6C8", S: "#F5CFAE", E: "#1B1B22", C: "#F4F4F6", c: "#C9CCD6", B: "#4A7BD0", R: "#D8303A", P: "#45454F" } },
+    { name: "Doctor", rows: [".CCCCCC.", ".cCCCCC.", ".CSESES.", ".CsMMMM.", "TTTVVTT.", "GTTTTTTG", ".tt..tt."], pal: { C: "#2FB3A0", c: "#1F8576", S: "#C98C62", s: "#C98C62", E: "#1B1B22", M: "#BFE3F5", T: "#2FB3A0", V: "#1F8576", t: "#1F8576", G: "#8EC9F0" } }
+  ];
+  // Check every replicant against the anatomy so a bad drawing is caught early
+  REPS.forEach((rep) => rep.rows.forEach((row, r) => row.split("").forEach((ch, c) => {
+    if ((ch === ".") !== (MASK[r][c] === ".")) console.warn(rep.name + " breaks the anatomy at row " + r + ", col " + c);
+  })));
+
+  const DERIVED = new Map();
+  function derive(rep) {
+    if (DERIVED.has(rep)) return DERIVED.get(rep);
+    const grid = rep.rows.map((row) => row.split("").map((ch) => ch === "." ? null : rep.pal[ch]).concat([null]));
+    const at = ([r, c]) => grid[r][c];
+    const majority = (cells) => {
+      const n = new Map();
+      cells.forEach((rc) => { const v = at(rc); if (v) n.set(v, (n.get(v) || 0) + 1); });
+      let best = null, bn = -1;
+      n.forEach((v, k) => { if (v > bn) { bn = v; best = k; } });
+      return best;
+    };
+    const d = {
+      grid, lid: at(AN.lid), eye: at(AN.eyes[0]),
+      hand: at(AN.handBack), sb: at(AN.sleeveBack), sf: at(AN.sleeveFront),
+      legA: at(AN.legBack), legB: at(AN.legBack2),
+      H: majority(REGION.hair), S: majority(REGION.face), T: majority(REGION.chest), t: majority(REGION.belly)
+    };
+    DERIVED.set(rep, d);
+    return d;
+  }
+
+  // =====================================================================
+  // 3. POSE ENGINE: turns (replicant, pose) into colored pixels.
+  // Pose fields: eyes ("closed"), gx, gy, headDy, headDx, bodyDy, hands, legs, kick,
+  // rot (1-3), lie (template), breathe, dx, dy, dxF (along facing), flip, clip,
+  // reveal, scan, tint, rowShift, ghost, fx (particles).
+  // =====================================================================
+  const FW = 12, FH = 10, OX = 2, OY = 3;
+  const LEGS = {
+    stand: ".ab..ab.", w1: "..ab.ab.", w3: ".ab.ab..", tuck: "..abab..", dangle: ".a....b.",
+    wide: ".ab...ab", stride: "ab....ab", back: ".ab....."
+  };
+
+  // Lying and flattened poses are templates of the same parts:
+  // H hair/hat, S face, E eye, T chest, t belly, K hand, P/p legs.
+  const TEMPLATES = {
+    back: ["......SSSH", "P..TKTSSSH", "PPPTTTSSHH", ".pptttHHHH"],
+    prone: ["......HHH.", "P..TTTHHHH", "PPPTTTHHHH", "ppKtttSSSH"],
+    proneB: ["p.....HHH.", "P..TTTHHHH", "PPPTTTHHHH", ".pKtttSSSH"],
+    curl: ["...HHHH.", ".TTHHHSS", "TTTTKSSS", "tPPPPPP."],
+    curlB: ["..THHHH.", ".TTHHHSS", "TTTTKSSS", "tPPPPPP."],
+    flat: ["..HHHHHH..", "KSSESESSSK", "PTTTTTTTTp"],
+    flopA: [".p.p......", ".P.P..SSSH", ".PPTKTSSSH", "...TTTSSHH", "...tttHHHH"],
+    flopB: ["p...p.....", ".P.P..SSSH", ".PPTKTSSSH", "...TTTSSHH", "...tttHHHH"]
+  };
+
+  function composeTemplate(rep, p) {
+    const d = derive(rep);
+    const map = { H: d.H, S: d.S, E: p.eyes === "closed" ? d.S : d.eye, T: d.T, t: d.t, K: d.hand, P: d.legA, p: d.legB };
+    const rows = TEMPLATES[p.lie].slice();
+    if (p.breathe && p.lie === "back") rows[0] = "....T" + rows[0].slice(5);
+    const w = rows[0].length, off = 1 + Math.floor((10 - w) / 2), y0 = 10 - rows.length;
+    const dx = (p.dx || 0) + (p.dxF || 0) * (p.flip ? -1 : 1), out = [];
+    rows.forEach((row, r) => row.split("").forEach((k, c) => {
+      if (k === ".") return;
+      const x = c + off;
+      out.push([(p.flip ? 11 - x : x) + dx, y0 + r + (p.dy || 0), map[k]]);
+    }));
+    addFx(out, p, dx, p.dy || 0);
+    return out;
+  }
+
+  function addFx(out, p, dx, dy) {
+    if (p.fx) p.fx.forEach((f) => f.cells.forEach(([r, c]) => {
+      const x = p.flip ? (2 * OX + 7 - c) : c;
+      out.push(f.abs ? [x, r, f.col] : [x + dx, r + dy, f.col]);
+    }));
+  }
+
+  function compose(rep, p) {
+    if (p.lie) return composeTemplate(rep, p);
+    const d = derive(rep);
+    const g = d.grid.map((row) => row.slice());
+    const L = LEGS[p.legs || "stand"];
+    for (let c = 0; c < 9; c++) { const ch = L[c] || "."; g[6][c] = ch === "a" ? d.legA : ch === "b" ? d.legB : null; }
+    const hand = d.hand, sf = d.sf, sb = d.sb;
+    const clr = (...cells) => cells.forEach(([r, c]) => { g[r][c] = null; });
+    switch (p.hands) {
+      case "up": clr([5, 0], [5, 7]); g[3][0] = hand; g[4][7] = sf; g[3][7] = hand; break;
+      case "high": clr([5, 0], [5, 7]); g[3][0] = sb; g[2][0] = sb; g[1][0] = sb; g[0][0] = hand;
+        g[4][7] = sf; g[3][7] = sf; g[2][7] = sf; g[1][7] = sf; g[0][7] = hand; break;
+      case "down": clr([5, 0], [5, 7]); g[6][0] = hand; g[6][7] = hand; break;
+      case "side": clr([5, 0], [5, 7]); g[5][1] = hand; g[5][6] = hand; break;
+      case "wave1": clr([5, 7]); g[4][7] = sf; g[3][7] = hand; break;
+      case "wave2": clr([5, 7]); g[4][7] = sf; g[3][8] = hand; break;
+      case "pump1": clr([5, 0], [5, 7]); g[4][7] = hand; g[5][1] = hand; break;
+      case "pump2": clr([5, 0], [5, 7]); g[4][0] = hand; g[5][6] = hand; break;
+      case "point": clr([5, 7]); g[4][7] = sf; g[4][8] = hand; break;
+      case "salute": clr([5, 7]); g[4][7] = sf; g[3][7] = sf; g[2][7] = hand; break;
+      case "mouth": clr([5, 7]); g[4][7] = sf; g[3][7] = hand; break;
+      case "palm": clr([5, 7]); g[4][7] = sf; g[3][7] = hand; g[2][6] = hand; break;
+      case "hold": clr([5, 7]); g[4][7] = hand; break;
+      case "clapA": clr([5, 0], [5, 7]); g[5][1] = hand; g[4][7] = hand; break;
+      case "clapB": clr([5, 0], [5, 7]); g[4][6] = hand; g[4][7] = hand; break;
+      case "scratch1": clr([5, 7]); g[4][7] = sf; g[3][7] = sf; g[2][7] = sf; g[1][7] = hand; break;
+      case "scratch2": clr([5, 7]); g[4][7] = sf; g[3][7] = sf; g[2][7] = sf; g[1][7] = sf; g[0][7] = hand; break;
+    }
+    if (p.kick) { g[5][7] = d.legA; g[5][8] = d.legB; }
+    // Eyes: closing paints them with the lid color, so shades and visors never blink.
+    const eyeCol = AN.eyes.map(([r, c]) => g[r][c]);
+    if (p.eyes === "closed") {
+      AN.eyes.forEach(([r, c]) => { g[r][c] = d.lid; });
+    } else if (p.gx || p.gy) {
+      // Glance only onto bare face (cells the lid color), so hair and hats stay put.
+      const tgt = AN.eyes.map(([r, c]) => [r + (p.gy || 0), c + (p.gx || 0)]);
+      const isEye = (r, c) => AN.eyes.some((e) => e[0] === r && e[1] === c);
+      const ok = tgt.every(([r, c]) => r >= 0 && r < 7 && c >= 0 && c < 8 && (g[r][c] === d.lid || isEye(r, c)));
+      if (ok) { AN.eyes.forEach(([r, c]) => { g[r][c] = d.lid; }); tgt.forEach(([r, c], i) => { g[r][c] = eyeCol[i]; }); }
+    }
+    if (p.headDx) for (let r = 0; r < 4; r++) g[r] = [null].concat(g[r].slice(0, 8));
+    if (p.headDy) { for (let r = 3; r >= 0; r--) g[r + 1] = g[r].slice(); g[0] = new Array(9).fill(null); }
+    if (p.bodyDy) { for (let r = 5; r >= 0; r--) g[r + 1] = g[r].slice(); g[0] = new Array(9).fill(null); g[6][8] = d.legA; }
+
+    const top = p.reveal === undefined ? 0 : 7 - p.reveal;
+    const cells = [];
+    for (let r = top; r < 7; r++) for (let c = 0; c < 9; c++) {
+      const v = g[r][c];
+      if (!v) continue;
+      cells.push([r, c, p.tint || (p.scan && r === top ? "#BFE0FF" : v)]);
+    }
+    let pts;
+    if (p.rot) {
+      pts = cells.filter((q) => q[1] < 8).map(([r, c, col]) =>
+        p.rot === 1 ? [7 - r, c, col] : p.rot === 2 ? [7 - c, 7 - r, col] : [r, 7 - c, col]);
+      let maxY = -99;
+      pts.forEach((q) => { if (q[1] > maxY) maxY = q[1]; });
+      pts.forEach((q) => { q[1] += 6 - maxY; });
+    } else {
+      pts = cells.map(([r, c, col]) => [c + (p.rowShift ? (p.rowShift[r] || 0) : 0), r, col]);
+    }
+    const out = [], dx = (p.dx || 0) + (p.dxF || 0) * (p.flip ? -1 : 1), dy = p.dy || 0;
+    if (p.ghost) p.ghost.forEach((gh) => pts.forEach(([x, y]) => {
+      out.push([OX + (p.flip ? 7 - x : x) + dx + gh.dx, OY + y + dy, gh.col]);
+    }));
+    pts.forEach(([x, y, col]) => {
+      const yy = OY + y + dy;
+      if (p.clip && yy > FH - 1) return;
+      out.push([OX + (p.flip ? 7 - x : x) + dx, yy, col]);
+    });
+    addFx(out, p, dx, dy);
+    return out;
+  }
+
+  // =====================================================================
+  // 4. PARTICLES (frame coordinates for a replicant facing right)
+  // =====================================================================
+  const GOLD = "#F2C230", DUST = "#4A4A56", ZC = "#A9C4FF", WATER = "#7FD0FF", WHITE = "#F4F4F4", BLUE = "#8FC2FF",
+    STEAM = "#6A6A78", MIST = "#DDEEFF", PINK = "#FF8FA8", GLOW = "#7FE0FF", GREEN = "#4DF07A", RED = "#E8675F";
+  const fx = (col, cells, abs = true) => ({ col, abs, cells });
+  const sp = (r, c) => [OY + r, OX + c];
+  const spc = (col, list) => fx(col, list.map(([r, c]) => sp(r, c)), false);
+  const z3 = (r, c) => [[r, c], [r, c + 1], [r, c + 2], [r + 1, c + 1], [r + 2, c], [r + 2, c + 1], [r + 2, c + 2]];
+  const z4 = (r, c) => [[r, c], [r, c + 1], [r, c + 2], [r, c + 3], [r + 1, c + 2], [r + 2, c + 1], [r + 3, c], [r + 3, c + 1], [r + 3, c + 2], [r + 3, c + 3]];
+  const noteS = (r, c) => [[r, c + 1], [r + 1, c + 1], [r + 2, c], [r + 2, c + 1]];
+  const P = {
+    dots: (n) => fx("#E8E8EE", [[1, 5], [1, 7], [1, 9]].slice(0, n)),
+    heart: (t) => fx("#FF5C8A", [[t, 8], [t, 10], [t + 1, 8], [t + 1, 9], [t + 1, 10], [t + 2, 9]]),
+    bang: fx(GOLD, [[0, 10], [1, 10], [3, 10]]),
+    ask: fx(BLUE, [[0, 8], [0, 9], [1, 10], [2, 9], [4, 9]]),
+    note: (t, x) => fx(BLUE, [[t, x + 1], [t, x + 2], [t + 1, x + 1], [t + 2, x], [t + 2, x + 1]]),
+    spark1: fx(GOLD, [[1, 1], [0, 10], [2, 11]]),
+    spark2: fx(GOLD, [[0, 2], [2, 10], [3, 0]]),
+    tear: (r) => fx(WATER, [[r, 7]]),
+    dust1: fx(DUST, [[9, 1]]),
+    dust2: fx(DUST, [[8, 0], [9, 2]]),
+    dustBoth: fx(DUST, [[9, 0], [9, 11], [8, 1], [8, 10]]),
+    dustBoth2: fx(DUST, [[8, 0], [8, 11], [7, 1], [7, 10]]),
+    food: fx("#D9A05B", [[5, 10], [6, 10]], false),
+    bitten: fx("#D9A05B", [[6, 10]], false),
+    crumb: fx("#D9A05B", [[9, 9]]),
+    impact: fx(GOLD, [[7, 11], [9, 11]]),
+    starsLie: [[[4, 7], [3, 10]], [[3, 8], [4, 11]], [[4, 9], [3, 6]]].map((c) => fx(GOLD, c)),
+    starsSit: [[[2, 3], [1, 7]], [[1, 4], [2, 8]], [[2, 6], [1, 2]]].map((c) => fx(GOLD, c)),
+    wall: fx("#3A3A48", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((r) => [r, 11])),
+    wallHit: fx(GOLD, [[0, 9], [1, 10], [5, 10]]),
+    gleam: fx(WHITE, [[4, 10], [5, 9], [5, 11], [6, 10]]),
+    boing: fx(BLUE, [[9, 0], [8, 1], [9, 10], [8, 11]]),
+    sweat: fx(WATER, [[4, 10]]),
+    steam1: fx(STEAM, [[1, 2], [0, 3], [1, 9], [0, 10]]),
+    steam2: fx(STEAM, [[0, 2], [1, 3], [0, 9], [1, 10]])
+  };
+
+  // =====================================================================
+  // 5. ANIMATIONS: keyframe lists of [duration ms, pose]
+  // =====================================================================
+  const merge = (...o) => Object.assign({}, ...o);
+  const air = (dy, p) => merge(p, { dy });
+  const rep = (n, frames) => { let out = []; for (let i = 0; i < n; i++) out = out.concat(typeof frames === "function" ? frames(i) : frames); return out; };
+  const UP = { hands: "up", legs: "dangle" };
+  const SAD = { hands: "down", headDy: 1, gy: 1 };
+  const TUCK = { hands: "side", legs: "tuck" };
+  const DOWN = { lie: "prone" };
+  const TUMBLE_ROT = [0, 1, 2, 3];
+  const SIT = { bodyDy: 1 }, DOZE = { bodyDy: 1, headDy: 1, eyes: "closed" };
+
+  const WALK = [[120, { legs: "wide" }], [120, { headDy: 1 }], [120, { legs: "tuck", dy: -1, hands: "side" }],
+    [120, { legs: "wide", hands: "side" }], [120, { headDy: 1 }], [120, { legs: "tuck", dy: -1 }]];
+  const RUN = [[90, { headDx: 1, legs: "stride", hands: "pump1" }], [90, { headDx: 1, legs: "tuck", dy: -1, hands: "side", fx: [P.dust1] }],
+    [90, { headDx: 1, legs: "stride", hands: "pump2" }], [90, { headDx: 1, legs: "tuck", dy: -1, hands: "side", fx: [P.dust2] }]];
+  const FLAIL = [[90, { hands: "up", legs: "w1", gy: -1 }], [90, { hands: "pump1", legs: "dangle", gy: -1 }],
+    [90, { hands: "up", legs: "w3", gy: -1 }], [90, { hands: "pump2", legs: "dangle", gy: -1 }]];
+
+  // --- sleep: five variants the desktop picks between ---
+  const BUB = "#BFE6FF";
+  const B1 = [[8, 9]], B2 = [[7, 9], [7, 10], [8, 9], [8, 10]], B3 = [[6, 9], [6, 10], [6, 11], [7, 9], [7, 11], [8, 9], [8, 10], [8, 11]];
+  const SLEEPS = {
+    nod: [[1000, DOZE], [900, merge(DOZE, { fx: [fx(ZC, z4(1, 8))] })], [900, merge(DOZE, { fx: [fx(ZC, z4(0, 8))] })], [700, DOZE],
+      [160, { bodyDy: 1, gy: -1 }], [500, { bodyDy: 1, eyes: "closed" }], [300, DOZE]],
+    bubble: [[700, merge(DOZE, { fx: [fx(BUB, B1)] })], [700, merge(DOZE, { fx: [fx(BUB, B2)] })], [900, merge(DOZE, { fx: [fx(BUB, B3)] })],
+      [700, merge(DOZE, { fx: [fx(BUB, B2)] })], [900, merge(DOZE, { fx: [fx(BUB, B3)] })],
+      [90, merge(DOZE, { fx: [fx(BUB, [[5, 8], [5, 11], [9, 11], [7, 8]])] })], [200, { bodyDy: 1, gy: -1, fx: [P.bang] }],
+      [600, { bodyDy: 1, eyes: "closed" }], [400, DOZE]],
+    curl: [[1200, { lie: "curl" }], [1200, { lie: "curlB", fx: [fx(ZC, z4(2, 8))] }], [1200, { lie: "curl", fx: [fx(ZC, z4(0, 8))] }], [900, { lie: "curlB" }]],
+    sprawl: [[1100, { lie: "prone" }], [1100, { lie: "prone", fx: [fx(ZC, z4(2, 8))] }], [300, { lie: "proneB" }], [300, { lie: "prone" }],
+      [300, { lie: "proneB" }], [1100, { lie: "prone", fx: [fx(ZC, z4(1, 8))] }]],
+    stand: [[900, { headDy: 1, eyes: "closed", hands: "down" }], [900, { headDy: 1, eyes: "closed", hands: "down", dx: 1, fx: [fx(ZC, z4(0, 8))] }],
+      [900, { headDy: 1, eyes: "closed", hands: "down", fx: [fx(ZC, z4(0, 8))] }], [700, { headDy: 1, eyes: "closed", hands: "down", dx: -1 }],
+      [150, { gy: -1 }], [500, { eyes: "closed" }]]
+  };
+  const LIE_DOWN = [[200, { headDy: 1 }], [300, SIT], [300, { bodyDy: 1, eyes: "closed" }]];
+  const GET_UP = [[300, { bodyDy: 1, eyes: "closed" }], [200, SIT], [200, { headDy: 1 }], [250, {}]];
+
+  // --- landings ---
+  const HARD_IMPACT = [[220, { headDy: 1, bodyDy: 1, hands: "side", fx: [P.dustBoth] }], [160, { headDy: 1, fx: [P.dustBoth2] }], [600, { gy: -1, fx: [P.bang] }], [300, {}]];
+  const SPLAT_IMPACT = [[180, merge(DOWN, { fx: [P.dustBoth] })], [140, merge(DOWN, { fx: [P.dustBoth2] })]]
+    .concat(rep(6, (i) => [[260, merge(DOWN, { fx: [P.starsLie[i % 3]] })]]), [[300, { bodyDy: 1, eyes: "closed" }], [200, { headDy: 1 }], [300, {}]]);
+  const STUCK = [[160, { rot: 2, hands: "side", legs: "dangle", dy: 2, clip: true, fx: [P.dustBoth] }]]
+    .concat(rep(6, (i) => [[130, { rot: 2, hands: "side", legs: i % 2 ? "w3" : "w1", dy: 2, clip: true }]]),
+      [[400, { rot: 2, hands: "side", dy: 2, clip: true }]],
+      rep(4, (i) => [[110, { rot: 2, hands: "side", legs: i % 2 ? "w3" : "w1", dy: 2, clip: true }]]),
+      [[90, { rot: 2, hands: "side", dy: 1, clip: true }], [90, { rot: 2, hands: "side", fx: [P.dustBoth2] }], [120, { dy: -2, hands: "up", legs: "tuck" }],
+        [140, { headDy: 1 }], [400, { eyes: "closed" }], [100, { flip: true }], [100, {}], [100, { flip: true }], [100, {}], [300, {}]]);
+  const PANCAKE = [[200, { lie: "flat", fx: [P.dustBoth] }], [900, { lie: "flat" }], [150, { lie: "flat", eyes: "closed" }], [700, { lie: "flat" }],
+    [120, { headDy: 1, bodyDy: 1 }], [120, SIT], [120, { dy: -1, hands: "up" }], [140, { headDy: 1 }],
+    [60, { dx: 1 }], [60, { dx: -1 }], [60, { dx: 1 }], [60, { dx: -1 }], [400, {}]];
+  const ROLL = [[100, { rot: 1, hands: "side", legs: "tuck", fx: [fx(DUST, [[9, 2], [8, 3], [9, 11], [8, 10]])] }], [100, { rot: 2, dxF: 1, hands: "side", legs: "tuck" }],
+    [100, { rot: 3, dxF: 2, hands: "side", legs: "tuck" }], [110, { dxF: 3, hands: "side", legs: "tuck" }], [110, { rot: 1, dxF: 3, hands: "side", legs: "tuck" }],
+    [700, { lie: "back", dxF: 3, fx: [P.starsLie[0]] }], [300, { lie: "back", dxF: 3, fx: [P.starsLie[1]] }], [300, { bodyDy: 1, dxF: 3 }], [200, { headDy: 1, dxF: 3 }], [400, { dxF: 3 }]];
+  const LEGSUP = [[200, { lie: "flopA", fx: [P.dustBoth] }]].concat(rep(8, (i) => [[140, { lie: i % 2 ? "flopA" : "flopB" }]]),
+    [[500, { lie: "flopA", fx: [P.starsLie[2]] }], [500, { lie: "flopA", fx: [P.starsLie[0]] }], [300, SIT], [200, { headDy: 1 }], [300, {}]]);
+  const BOING = [[120, { headDy: 1, bodyDy: 1, fx: [P.dustBoth, P.boing] }], [100, air(-2, { legs: "tuck", hands: "up" })], [120, air(-3, { legs: "tuck", hands: "up" })],
+    [100, air(-2, { legs: "tuck", hands: "up" })], [80, air(-1, {})], [110, { headDy: 1, fx: [P.boing] }], [90, air(-1, { legs: "tuck" })], [110, air(-2, { legs: "tuck" })],
+    [90, air(-1, { legs: "tuck" })], [100, { headDy: 1 }], [80, air(-1, {})], [90, { headDy: 1 }], [600, { hands: "up", fx: [P.spark1] }], [300, { hands: "up", fx: [P.spark2] }], [300, {}]];
+  const THUD = [[160, { bodyDy: 1, headDy: 1, eyes: "closed", fx: [P.dustBoth] }], [140, { bodyDy: 1, eyes: "closed", fx: [P.dustBoth2] }]]
+    .concat(rep(6, (i) => [[220, { bodyDy: 1, eyes: i % 2 ? "closed" : undefined, fx: [P.starsSit[i % 3]] }]]), [[400, { bodyDy: 1, gy: 1 }], [200, { headDy: 1 }], [300, {}]]);
+  const HERO = [[160, { headDy: 1, bodyDy: 1, fx: [P.dustBoth] }], [200, { headDy: 1, bodyDy: 1, fx: [P.dustBoth2] }], [900, { headDy: 1, bodyDy: 1 }],
+    [300, SIT], [300, { headDy: 1 }], [200, {}], [160, { fx: [P.gleam] }], [900, { hands: "point" }], [300, {}]];
+  const DAZE = rep(6, (i) => [[250, { bodyDy: 1, eyes: i % 2 ? "closed" : undefined, fx: [P.starsSit[i % 3]] }]]).concat([[200, { headDy: 1 }], [200, {}]]);
+
+  const IN_SMALL = [[500, { reveal: 0 }], [90, air(-3, UP)], [80, air(-2, UP)], [70, air(-1, UP)]];
+  const IN_BIG = [[500, { reveal: 0 }]].concat(TUMBLE_ROT.map((r, i) => [80, air(-3 + i, merge(TUCK, { rot: r }))]));
+
+  const BOOT_IN = [[400, { reveal: 0 }]].concat(rep(7, (i) => [[110, { reveal: i + 1, scan: true, eyes: "closed" }]]),
+    [[300, { eyes: "closed" }], [140, {}], [120, { eyes: "closed" }], [400, {}]]);
+  const BOOT = BOOT_IN.concat([[1400, {}]], rep(7, (i) => [[70, { reveal: 6 - i, scan: true }]]), [[500, { reveal: 0 }]]);
+
+  // --- props for the newer actions ---
+  const BOOK = [spc("#C0413A", [[3, 8], [4, 8]]), spc(WHITE, [[3, 9], [4, 9]])];
+  const BOOK_FLIP = [spc("#C0413A", [[3, 8], [4, 8]]), spc(WHITE, [[2, 9], [4, 9]])];
+  const CUP = spc(WHITE, [[3, 8], [4, 8]]), CUP_UP = spc(WHITE, [[2, 8], [3, 8]]);
+  const STEAMA = spc("#9A9AA8", [[2, 8], [1, 9]]), STEAMB = spc("#9A9AA8", [[1, 8], [2, 9]]);
+  const LAP = fx("#5A5A68", [[9, 9], [9, 10], [9, 11], [8, 11], [7, 11]]);
+  const LAPA = fx(GLOW, [[8, 11]]), LAPB = fx(WHITE, [[9, 10], [7, 11]]);
+  const PH1 = spc(GLOW, [[4, 8]]), PH2 = spc("#DDF8FF", [[4, 8], [3, 8]]);
+  const JUG = [[6, 10], [4, 11], [2, 11], [1, 10], [2, 9], [4, 9]];
+  const juggle = (k) => [fx(RED, [JUG[k % 6]]), fx(GOLD, [JUG[(k + 2) % 6]]), fx(BLUE, [JUG[(k + 4) % 6]])];
+  const BROOM1 = [spc("#8A5A3A", [[3, 8], [4, 8], [5, 8]]), spc("#D9A05B", [[6, 7], [6, 8]])];
+  const BROOM2 = [spc("#8A5A3A", [[3, 8], [4, 8], [5, 9]]), spc("#D9A05B", [[6, 8], [6, 9]]), fx(DUST, [[8, 11]])];
+  const BAR = (row) => [fx("#7A7A88", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((c) => [row, c])), fx("#3A3A48", [[row - 1, 1], [row + 1, 1], [row - 1, 10], [row + 1, 10]])];
+  const BATTERY = (lvl, on) => {
+    const out = [fx(on ? GREEN : "#9A9AA8", [[0, 4], [0, 5], [0, 6], [0, 7], [0, 8], [2, 4], [2, 5], [2, 6], [2, 7], [2, 8], [1, 4], [1, 8], [1, 9]])];
+    if (lvl) out.push(fx(GREEN, [[1, 5], [1, 6], [1, 7]].slice(0, lvl)));
+    return out;
+  };
+  const BAR_DL = (n) => [fx("#2A2A36", [3, 4, 5, 6, 7, 8, 9].map((c) => [1, c])), fx(BLUE, [3, 4, 5, 6, 7, 8, 9].slice(0, n).map((c) => [1, c]))];
+  const SMOKE1 = fx("#5A5A66", [[1, 4], [0, 5], [2, 6]]), SMOKE2 = fx("#5A5A66", [[0, 4], [1, 6], [0, 7]]);
+  const G1 = "#5C7BB8", G2 = "#2C3550";
+
+  const ANIMS = [
+    // ---------------- Idle ----------------
+    { id: "breathe", cat: "Idle", name: "Breathe", trig: "Resting state · always on", blinks: true, frames: [[900, {}], [700, { headDy: 1 }]] },
+    { id: "blink", cat: "Idle", name: "Blink", trig: "Every 2–6 s · sometimes twice",
+      frames: [[1600, {}], [110, { eyes: "closed" }], [150, {}], [110, { eyes: "closed" }], [1300, {}], [120, { eyes: "closed" }]] },
+    { id: "look", cat: "Idle", name: "Look around", trig: "Salience · something changed",
+      frames: [[800, {}], [650, { gx: -1 }], [200, {}], [900, { flip: true }], [600, { flip: true, gy: -1 }], [600, { flip: true, gy: 1 }], [220, { flip: true }], [700, { gy: -1 }], [400, {}]] },
+    { id: "think", cat: "Idle", name: "Think", trig: "Inner-voice fragment",
+      frames: [[500, { gy: -1 }], [350, { gy: -1, fx: [P.dots(1)] }], [350, { gy: -1, fx: [P.dots(2)] }], [550, { gy: -1, fx: [P.dots(3)] }], [300, { gy: -1 }], [700, {}]] },
+    { id: "sit", cat: "Idle", name: "Sit", trig: "Low energy · resting",
+      frames: [[700, {}], [140, { headDy: 1 }], [1600, SIT], [140, { bodyDy: 1, eyes: "closed" }], [1200, SIT], [900, { bodyDy: 1, gy: 1 }], [140, { headDy: 1 }], [500, {}]] },
+    { id: "hum", cat: "Idle", name: "Hum", trig: "Content · good mood",
+      frames: [[400, { fx: [P.note(1, 8)] }], [400, { headDy: 1, fx: [P.note(0, 8)] }], [400, { eyes: "closed", fx: [P.note(1, 9)] }], [400, { headDy: 1, eyes: "closed", fx: [P.note(0, 9)] }]] },
+    { id: "yawn", cat: "Idle", name: "Yawn", trig: "Getting tired",
+      frames: [[600, {}], [250, { gy: -1 }], [300, { gy: -1, eyes: "closed", hands: "mouth" }], [900, { eyes: "closed", hands: "mouth", fx: [spc("#2A1E1E", [[3, 5]])] }],
+        [250, { eyes: "closed" }], [200, { headDy: 1, eyes: "closed" }], [500, {}]] },
+    { id: "scratch", cat: "Idle", name: "Scratch head", trig: "Puzzling over something",
+      frames: [[500, {}]].concat(rep(4, [[150, { hands: "scratch1", gy: -1 }], [150, { hands: "scratch2", gy: -1 }]]), [[600, { fx: [P.ask] }], [300, {}]]) },
+    { id: "tapfoot", cat: "Idle", name: "Tap foot", trig: "Impatient · waiting on you",
+      frames: [[400, {}]].concat(rep(6, [[160, { legs: "wide", gy: -1 }], [160, { gy: -1 }]]), [[500, { gx: -1 }], [300, {}]]) },
+    { id: "whistle", cat: "Idle", name: "Whistle", trig: "Content · passing time",
+      frames: [[350, { fx: [fx(BLUE, noteS(3, 9))] }], [350, { headDy: 1, fx: [fx(BLUE, noteS(2, 10))] }], [350, { fx: [fx(BLUE, noteS(1, 9))] }],
+        [350, { headDy: 1, fx: [fx(BLUE, noteS(0, 10))] }], [400, {}]] },
+    { id: "watch", cat: "Idle", name: "Check watch", trig: "Keeping time",
+      frames: [[500, {}], [200, { hands: "hold" }], [1000, { hands: "hold", gy: 1, fx: [spc(GOLD, [[4, 8]])] }], [200, { hands: "hold" }], [500, { gy: -1 }], [300, {}]] },
+    { id: "sway", cat: "Idle", name: "Sway", trig: "Good mood · vibing",
+      frames: [[450, { dx: -1, eyes: "closed" }], [450, { fx: [P.note(1, 9)] }], [450, { dx: 1, eyes: "closed" }], [450, {}]] },
+    { id: "stargaze", cat: "Idle", name: "Stargaze", trig: "Quiet moment",
+      frames: [[500, {}], [600, { gy: -1, fx: [fx(WHITE, [[0, 2], [1, 10]])] }], [600, { gy: -1, fx: [fx(GOLD, [[1, 4], [0, 9]])] }],
+        [600, { gy: -1, fx: [fx(WHITE, [[0, 6], [2, 11]])] }], [200, { gy: -1, eyes: "closed" }], [600, { gy: -1, fx: [fx(GOLD, [[0, 2], [1, 10]])] }], [400, {}]] },
+    { id: "peek", cat: "Idle", name: "Peek around", trig: "Feels watched",
+      frames: [[500, {}], [120, { flip: true }], [400, { flip: true, gx: -1 }], [120, {}], [400, { gx: -1 }], [120, { flip: true }], [300, { flip: true }], [400, {}]] },
+    { id: "bored", cat: "Idle", name: "Bored", trig: "Low mood · nothing to do",
+      frames: [[600, { hands: "down" }], [900, { hands: "down", headDy: 1, gy: 1 }], [300, { hands: "down", headDy: 1, eyes: "closed", fx: [spc("#9A9AA8", [[3, 8], [3, 9]])] }],
+        [400, { hands: "down", headDy: 1, fx: [spc("#9A9AA8", [[2, 9], [1, 9]])] }], [600, { hands: "down" }]] },
+    { id: "sneeze", cat: "Idle", name: "Sneeze", trig: "Dust in the air",
+      frames: [[500, {}], [200, { gy: -1 }], [200, { gy: -1, eyes: "closed" }], [150, { gy: -1, eyes: "closed", dy: -1 }],
+        [120, { headDx: 1, eyes: "closed", fx: [spc(MIST, [[2, 8], [3, 9], [4, 8]])] }], [200, { headDx: 1, fx: [spc(MIST, [[1, 9], [3, 9], [5, 9]])] }],
+        [400, {}], [150, { eyes: "closed" }], [300, {}]] },
+
+    // ---------------- Move ----------------
+    { id: "walk", cat: "Move", name: "Walk", trig: "Wander drive · needs energy", scroll: 1 / 120, frames: WALK },
+    { id: "run", cat: "Move", name: "Run", trig: "High energy · somewhere to be", scroll: 2 / 90, frames: RUN },
+    { id: "hop", cat: "Move", name: "Hop", trig: "Good mood and high energy",
+      frames: [[700, {}], [120, { headDy: 1 }], [110, air(-2, { hands: "up", legs: "tuck" })], [170, air(-3, { hands: "up", legs: "tuck" })],
+        [110, air(-2, { hands: "up", legs: "tuck" })], [90, air(-1, {})], [150, { headDy: 1 }], [600, {}]] },
+    { id: "dance", cat: "Move", name: "Dance", trig: "Very good mood",
+      frames: [[240, { hands: "up", legs: "w1", fx: [P.note(1, 8)] }], [240, { hands: "up", legs: "w3", flip: true, dy: -1 }], [240, { hands: "wave1", legs: "w1", fx: [P.note(0, 9)] }],
+        [240, { hands: "up", flip: true, legs: "w3", dy: -1 }], [240, { headDy: 1, hands: "side" }], [240, { hands: "up", dy: -1, fx: [P.note(1, 8)] }]] },
+    { id: "sneak", cat: "Move", name: "Sneak", trig: "Up to something", scroll: 1 / 440,
+      frames: [[220, { headDy: 1, legs: "w1", hands: "side" }], [220, { headDy: 1, legs: "tuck", hands: "side", gx: -1 }], [220, { headDy: 1, legs: "w3", hands: "side" }], [220, { headDy: 1, legs: "tuck", hands: "side" }]] },
+    { id: "moonwalk", cat: "Move", name: "Moonwalk", trig: "Showing off", scroll: -1 / 150,
+      frames: [[150, { legs: "w1" }], [150, {}], [150, { legs: "w3" }], [150, {}]] },
+    { id: "skip", cat: "Move", name: "Skip", trig: "Happy and full of energy", scroll: 1 / 100,
+      frames: [[150, { legs: "w1", dy: -1, hands: "pump1" }], [150, { legs: "tuck", dy: -2, hands: "pump1" }], [150, { legs: "w3", hands: "pump2" }], [150, { legs: "tuck", dy: -2, hands: "pump2" }]] },
+    { id: "cartwheel", cat: "Move", name: "Cartwheel", trig: "Very good mood",
+      frames: [[400, {}], [110, { hands: "high" }], [110, { rot: 1, hands: "high" }], [110, { rot: 2, hands: "high" }], [110, { rot: 3, hands: "high" }], [110, { hands: "high" }],
+        [300, { hands: "up", fx: [P.spark1] }], [400, {}]] },
+    { id: "spin", cat: "Move", name: "Spin", trig: "Good mood",
+      frames: [[120, {}], [120, { flip: true }], [120, {}], [120, { flip: true, dy: -1 }], [120, { dy: -1 }], [120, { flip: true }], [120, {}], [400, { hands: "up", fx: [P.spark1] }], [400, {}]] },
+
+    // ---------------- Emote ----------------
+    { id: "wave", cat: "Emote", name: "Wave", trig: "Social drive · you are nearby",
+      frames: [[600, {}]].concat(rep(2, [[200, { hands: "wave1" }], [200, { hands: "wave2" }]]), [[200, { hands: "wave1" }], [900, {}]]) },
+    { id: "nod", cat: "Emote", name: "Nod", trig: "Agrees with something", frames: [[700, {}], [150, { headDy: 1, gy: 1 }], [150, {}], [150, { headDy: 1, gy: 1 }], [800, {}]] },
+    { id: "no", cat: "Emote", name: "Shake head", trig: "Disagrees", frames: [[700, {}], [130, { flip: true }], [130, {}], [130, { flip: true }], [130, {}], [800, {}]] },
+    { id: "salute", cat: "Emote", name: "Salute", trig: "Greets you formally", frames: [[600, {}], [1000, { hands: "salute" }], [600, {}]] },
+    { id: "bow", cat: "Emote", name: "Bow", trig: "Thanks you",
+      frames: [[600, {}], [200, { headDx: 1 }], [800, { headDx: 1, headDy: 1, eyes: "closed", hands: "side" }], [200, { headDx: 1 }], [600, {}]] },
+    { id: "cheer", cat: "Emote", name: "Cheer", trig: "Something good happened",
+      frames: [[500, {}], [140, { headDy: 1 }], [140, air(-2, { hands: "up", legs: "tuck", fx: [P.spark1] })], [140, air(-1, { hands: "up", fx: [P.spark2] })], [140, { headDy: 1, hands: "up" }],
+        [140, air(-2, { hands: "up", legs: "tuck", fx: [P.spark1] })], [140, air(-1, { hands: "up", fx: [P.spark2] })], [160, { headDy: 1 }], [600, {}]] },
+    { id: "sad", cat: "Emote", name: "Sad", trig: "Low mood",
+      frames: [[700, SAD], [300, merge(SAD, { fx: [P.tear(6)] })], [300, merge(SAD, { fx: [P.tear(7)] })], [300, merge(SAD, { fx: [P.tear(8)] })], [900, SAD], [150, merge(SAD, { eyes: "closed" })], [600, SAD]] },
+    { id: "laugh", cat: "Emote", name: "Laugh", trig: "Mood spike",
+      frames: [[500, {}]].concat(rep(3, [[110, { headDy: 1, eyes: "closed" }], [110, { eyes: "closed" }]]), [[600, {}]]) },
+    { id: "love", cat: "Emote", name: "Love", trig: "Social drive · a friend is near",
+      frames: [[500, {}], [300, { eyes: "closed", fx: [P.heart(2)] }], [300, { eyes: "closed", fx: [P.heart(1)] }], [500, { fx: [P.heart(0)] }], [700, {}]] },
+    { id: "surprise", cat: "Emote", name: "Surprise", trig: "Startled · just dropped",
+      frames: [[600, {}], [120, { dy: -1, gy: -1, hands: "up", fx: [P.bang] }], [600, { gy: -1, fx: [P.bang] }], [200, {}], [500, {}]] },
+    { id: "confused", cat: "Emote", name: "Confused", trig: "Can't make sense of it",
+      frames: [[500, {}], [700, { gx: -1, fx: [P.ask] }], [700, { flip: true, fx: [P.ask] }], [700, { gy: -1, fx: [P.ask] }], [300, {}]] },
+    { id: "shiver", cat: "Emote", name: "Shiver", trig: "Startled or cold",
+      frames: [[900, {}]].concat(rep(8, (i) => [[60, { dx: i % 2 ? -1 : 1, hands: "down", eyes: i < 6 ? "closed" : undefined }]]), [[500, { hands: "down" }], [400, {}]]) },
+    { id: "angry", cat: "Emote", name: "Angry", trig: "Very low mood",
+      frames: rep(2, [[300, { hands: "down", fx: [P.steam1] }], [300, { hands: "down", headDy: 1, fx: [P.steam2] }]])
+        .concat(rep(2, [[110, { dy: -1, hands: "up", fx: [P.steam1] }], [130, { headDy: 1, hands: "down", fx: [P.dustBoth, P.steam2] }]]), [[500, { hands: "down", fx: [P.steam1] }], [300, {}]]) },
+    { id: "cry", cat: "Emote", name: "Cry", trig: "Lowest mood",
+      frames: rep(2, [[300, { headDy: 1, eyes: "closed", hands: "down", fx: [spc(WATER, [[4, 3], [5, 5]])] }], [300, { headDy: 1, eyes: "closed", hands: "down", fx: [spc(WATER, [[5, 3], [4, 5]])] }],
+        [300, { headDy: 1, eyes: "closed", hands: "down", fx: [spc(WATER, [[6, 3], [6, 5]])] }]]).concat([[700, { headDy: 1, hands: "palm", eyes: "closed" }], [400, SAD], [300, {}]]) },
+    { id: "blush", cat: "Emote", name: "Blush", trig: "Complimented · social",
+      frames: [[500, {}], [1200, { gy: 1, fx: [spc(PINK, [[3, 3], [3, 6]])] }], [200, { eyes: "closed", fx: [spc(PINK, [[3, 3], [3, 6]])] }], [600, { gy: 1, fx: [spc(PINK, [[3, 3], [3, 6]])] }], [400, {}]] },
+    { id: "shrug", cat: "Emote", name: "Shrug", trig: "Doesn't know",
+      frames: [[500, {}], [150, { hands: "up", headDy: 1 }], [800, { hands: "up", headDy: 1, gx: -1, fx: [P.ask] }], [150, { hands: "up" }], [400, {}]] },
+    { id: "facepalm", cat: "Emote", name: "Facepalm", trig: "Something silly happened",
+      frames: [[500, {}], [200, { hands: "mouth" }], [1200, { hands: "palm", headDy: 1, eyes: "closed" }], [200, { hands: "mouth" }], [400, {}]] },
+    { id: "clap", cat: "Emote", name: "Clap", trig: "Applauds you",
+      frames: [[300, {}]].concat(rep(6, [[120, { hands: "clapA" }], [120, { hands: "clapB", fx: [spc(GOLD, [[3, 8], [5, 8]])] }]]), [[400, {}]]) },
+    { id: "thumbs", cat: "Emote", name: "Thumbs up", trig: "Approves",
+      frames: [[500, {}], [160, { hands: "hold" }], [900, { hands: "wave1", fx: [fx(WHITE, [[3, 10], [4, 9], [4, 11], [5, 10]])] }], [300, { hands: "wave1" }], [300, {}]] },
+    { id: "scared", cat: "Emote", name: "Scared", trig: "Startled badly",
+      frames: [[400, {}], [100, { dy: -1, hands: "up", gy: -1, fx: [P.bang] }]].concat(rep(8, (i) => [[60, { hands: "up", gy: -1, dx: i % 2 ? 1 : -1, fx: [P.sweat] }]]),
+        [[400, { hands: "up", gy: -1, fx: [P.sweat] }], [300, {}]]) },
+    { id: "proud", cat: "Emote", name: "Proud", trig: "Just did something good",
+      frames: [[500, {}], [200, { hands: "side", dy: -1 }], [1200, { hands: "side", dy: -1, eyes: "closed", fx: [P.spark1] }], [300, { hands: "side", dy: -1, fx: [P.spark2] }], [300, {}]] },
+    { id: "giggle", cat: "Emote", name: "Giggle", trig: "Amused",
+      frames: [[400, {}]].concat(rep(5, [[90, { hands: "mouth", eyes: "closed", headDy: 1 }], [90, { hands: "mouth", eyes: "closed" }]]), [[400, {}]]) },
+
+    // ---------------- Action ----------------
+    { id: "point", cat: "Action", name: "Point", trig: "Shows you something",
+      frames: [[600, {}], [1100, { hands: "point" }], [150, { hands: "point", eyes: "closed" }], [500, { hands: "point" }], [300, {}]] },
+    { id: "eat", cat: "Action", name: "Eat", trig: "Low energy · snack",
+      frames: [[500, {}], [300, { hands: "mouth", fx: [P.food] }], [220, { hands: "mouth", eyes: "closed", fx: [P.food] }], [220, { hands: "mouth", fx: [P.bitten] }],
+        [220, { hands: "mouth", eyes: "closed", fx: [P.bitten, P.crumb] }], [220, { hands: "mouth" }], [400, { eyes: "closed" }], [500, {}]] },
+    { id: "kick", cat: "Action", name: "Kick", trig: "Restless energy",
+      frames: [[600, {}], [140, { headDy: 1 }], [140, { legs: "back", kick: true, hands: "side" }], [300, { legs: "back", kick: true, hands: "side", fx: [P.impact] }], [160, { headDy: 1 }], [600, {}]] },
+    { id: "jacks", cat: "Action", name: "Jumping jacks", trig: "High energy · exercise",
+      frames: rep(6, [[180, { hands: "high", legs: "stride", dy: -1 }], [180, { hands: "side" }]]).concat([[400, { fx: [P.sweat] }]]) },
+    { id: "read", cat: "Action", name: "Read", trig: "Calm · curious",
+      frames: [[400, {}], [200, { hands: "hold", fx: BOOK }], [1200, { hands: "hold", gy: 1, fx: BOOK }], [150, { hands: "hold", gy: 1, fx: BOOK_FLIP }],
+        [1000, { hands: "hold", gy: 1, fx: BOOK }], [150, { hands: "hold", eyes: "closed", fx: BOOK }], [300, {}]] },
+    { id: "coffee", cat: "Action", name: "Coffee", trig: "Low energy · pick-me-up",
+      frames: [[400, {}], [600, { hands: "hold", fx: [CUP, STEAMA] }], [600, { hands: "hold", fx: [CUP, STEAMB] }], [200, { hands: "mouth", fx: [CUP_UP] }],
+        [700, { hands: "mouth", eyes: "closed", gy: -1, fx: [CUP_UP] }], [200, { hands: "hold", fx: [CUP] }], [500, { hands: "hold", eyes: "closed", fx: [CUP, STEAMA] }], [300, {}]] },
+    { id: "laptop", cat: "Action", name: "Laptop", trig: "Busy · focused",
+      frames: [[300, SIT]].concat(rep(6, [[200, { bodyDy: 1, gy: 1, fx: [LAP, LAPA] }], [200, { bodyDy: 1, gy: 1, fx: [LAP, LAPB] }]]),
+        [[300, { bodyDy: 1, eyes: "closed", fx: [LAP, LAPA] }], [300, {}]]) },
+    { id: "phone", cat: "Action", name: "Phone", trig: "Idle scrolling",
+      frames: [[400, {}], [200, { hands: "hold", fx: [PH1] }], [900, { hands: "hold", gy: 1, fx: [PH1] }], [300, { hands: "hold", gy: 1, fx: [PH2] }], [700, { hands: "hold", gy: 1, fx: [PH1] }],
+        [110, { hands: "hold", eyes: "closed", headDy: 1, fx: [PH2] }], [110, { hands: "hold", eyes: "closed", fx: [PH2] }], [110, { hands: "hold", eyes: "closed", headDy: 1, fx: [PH2] }],
+        [500, { hands: "hold", gy: 1, fx: [PH1] }], [300, {}]] },
+    { id: "juggle", cat: "Action", name: "Juggle", trig: "Good mood · showing off",
+      frames: rep(12, (k) => [[140, { hands: k % 2 ? "wave1" : "hold", gy: -1, fx: juggle(k) }]]) },
+    { id: "throw", cat: "Action", name: "Throw", trig: "Playful",
+      frames: [[400, {}], [250, { hands: "pump2", fx: [spc(RED, [[3, 0]])] }], [120, { hands: "point", headDx: 1, fx: [spc(RED, [[4, 9]])] }],
+        [90, { hands: "point", headDx: 1, fx: [fx(RED, [[5, 11]])] }], [700, { hands: "point", gy: -1 }], [300, {}]] },
+    { id: "sweep", cat: "Action", name: "Sweep", trig: "Tidying up",
+      frames: rep(4, [[250, { hands: "hold", gy: 1, fx: BROOM1 }], [250, { hands: "hold", gy: 1, fx: BROOM2 }]]).concat([[400, {}]]) },
+    { id: "lift", cat: "Action", name: "Lift weights", trig: "High energy · exercise",
+      frames: [[400, {}], [200, { hands: "side", headDy: 1, fx: BAR(7) }], [300, { hands: "side", fx: BAR(7) }], [200, { hands: "up", fx: BAR(5) }],
+        [700, { hands: "high", eyes: "closed", fx: BAR(2).concat([P.sweat]) }], [200, { hands: "up", fx: BAR(5) }], [300, { hands: "side", fx: BAR(7) }],
+        [200, { hands: "up", fx: BAR(5) }], [700, { hands: "high", eyes: "closed", fx: BAR(2) }], [300, { hands: "side", headDy: 1, fx: BAR(7) }], [400, {}]] },
+
+    // ---------------- Life ----------------
+    { id: "held", cat: "Life", name: "Picked up", trig: "Dragged with the mouse",
+      frames: [[600, {}], [160, air(-2, UP)], [260, air(-3, UP)], [260, merge(UP, { dy: -3, dx: -1 })], [260, air(-3, UP)], [260, merge(UP, { dy: -3, dx: 1 })],
+        [260, air(-3, UP)], [80, air(-2, UP)], [80, air(-1, UP)], [160, { headDy: 1 }], [700, {}]] },
+    { id: "stretch", cat: "Life", name: "Stretch", trig: "Waking up",
+      frames: [[600, {}], [300, { hands: "high", dy: -1, eyes: "closed", legs: "tuck" }], [900, { hands: "high", dy: -1, eyes: "closed", legs: "tuck" }], [200, { headDy: 1, eyes: "closed" }], [700, {}]] },
+    { id: "glitch", cat: "Life", name: "Glitch", trig: "Rare · something in the loop slipped",
+      frames: [[1200, {}], [60, { rowShift: [1, 0, -1, 0, 1, 0, 0] }], [60, { tint: "#FF3EA5", dx: 1 }], [60, { rowShift: [0, -1, 0, 1, 0, -1, 0] }], [60, { tint: "#7FE0FF", dx: -1 }],
+        [80, { rowShift: [1, 1, 0, 0, -1, -1, 0] }], [400, {}], [60, { tint: "#7FE0FF" }], [600, {}]] },
+    { id: "boot", cat: "Life", name: "Boot up", trig: "Birth · the entity turns on", frames: BOOT },
+    { id: "teleport", cat: "Life", name: "Teleport", trig: "Rare · blinks out and back",
+      frames: [[500, {}]].concat(rep(7, (i) => [[70, { reveal: 6 - i, scan: true }]]), [[300, { reveal: 0, fx: [fx(GLOW, [[9, 4], [9, 7], [8, 6]])] }]],
+        rep(7, (i) => [[70, { reveal: i + 1, scan: true }]]), [[200, { eyes: "closed" }], [400, {}]]) },
+    { id: "overheat", cat: "Life", name: "Overheat", trig: "Drained and upset",
+      frames: [[400, {}], [300, { fx: [SMOKE1] }], [100, { tint: RED }], [300, { fx: [SMOKE2], rowShift: [0, 1, 0, 0, -1, 0, 0] }], [100, { tint: RED }],
+        [400, { eyes: "closed", fx: [SMOKE1] }], [300, { hands: "down", headDy: 1, fx: [SMOKE2] }], [600, { hands: "down", headDy: 1 }], [300, {}]] },
+    { id: "charge", cat: "Life", name: "Recharge", trig: "Low energy · tops up",
+      frames: [[300, { eyes: "closed", fx: BATTERY(0) }], [400, { eyes: "closed", fx: BATTERY(1) }], [400, { eyes: "closed", fx: BATTERY(2) }], [400, { eyes: "closed", fx: BATTERY(3) }],
+        [150, { fx: BATTERY(3, true) }], [150, { eyes: "closed", fx: BATTERY(3) }], [150, { fx: BATTERY(3, true) }], [300, air(-1, { hands: "up", fx: [P.spark1] })], [400, {}]] },
+    { id: "download", cat: "Life", name: "Download", trig: "Learning something",
+      frames: rep(7, (i) => [[180, { gy: -1, fx: BAR_DL(i + 1) }]]).concat([[500, { fx: [fx(GREEN, [[1, 6], [2, 7], [1, 8], [0, 9]])] }], [400, {}]]) },
+    { id: "replicate", cat: "Life", name: "Replicate", trig: "Rare · splits, then pulls back together",
+      frames: [[500, {}], [120, { eyes: "closed", ghost: [{ dx: 1, col: G1 }] }], [120, { ghost: [{ dx: -1, col: G1 }, { dx: 1, col: G1 }] }],
+        [150, { ghost: [{ dx: -2, col: G1 }, { dx: 2, col: G1 }] }], [600, { gy: -1, ghost: [{ dx: -2, col: G1 }, { dx: 2, col: G1 }] }],
+        [400, { ghost: [{ dx: -2, col: G2 }, { dx: 2, col: G2 }] }], [150, { ghost: [{ dx: -1, col: G2 }, { dx: 1, col: G2 }] }], [150, { fx: [P.spark2] }], [400, {}]] },
+
+    // ---------------- Sleep ----------------
+    { id: "sleep_nod", cat: "Sleep", name: "Nod off", trig: "Sits and dozes · jerks awake now and then", frames: SLEEPS.nod },
+    { id: "sleep_bubble", cat: "Sleep", name: "Snot bubble", trig: "Dozing · the bubble grows, pops, wakes it", frames: SLEEPS.bubble },
+    { id: "sleep_curl", cat: "Sleep", name: "Curl up", trig: "Curled in a ball · slow breathing", frames: SLEEPS.curl },
+    { id: "sleep_sprawl", cat: "Sleep", name: "Sprawl", trig: "Face-down · foot twitches", frames: SLEEPS.sprawl },
+    { id: "sleep_stand", cat: "Sleep", name: "Standing doze", trig: "Falls asleep on its feet · wobbles", frames: SLEEPS.stand },
+
+    // ---------------- Fall ----------------
+    { id: "flail", cat: "Fall", name: "Flail", trig: "Falling past 10 px", frames: FLAIL.map(([d, p]) => [d, air(-2, p)]) },
+    { id: "tumble", cat: "Fall", name: "Tumble", trig: "Falling past 22 px", frames: TUMBLE_ROT.map((r) => [90, air(-2, merge(TUCK, { rot: r }))]) },
+    { id: "hardland", cat: "Fall", name: "Hard landing", trig: "Landed from 9–25 px", frames: IN_SMALL.concat(HARD_IMPACT, [[400, {}]]) },
+    { id: "splat", cat: "Fall", name: "Splat", trig: "Big drop · face-down, sees stars", frames: IN_BIG.concat(SPLAT_IMPACT, [[400, {}]]) },
+    { id: "wallsplat", cat: "Fall", name: "Wall splat", trig: "Rare · a hard throw into the screen edge",
+      frames: [[500, { fx: [P.wall] }], [90, merge(UP, { dy: -2, fx: [P.wall] })], [90, merge(UP, { dy: -2, dx: 1, fx: [P.wall] })],
+        [450, merge(UP, { dy: -2, dx: 1, eyes: "closed", fx: [P.wall, P.wallHit] })], [220, merge(UP, { dy: -1, dx: 1, eyes: "closed", fx: [P.wall] })],
+        [220, merge(UP, { dx: 1, eyes: "closed", fx: [P.wall] })]].concat(DAZE.map(([d, p]) => [d, merge(p, { fx: (p.fx || []).concat([P.wall]) })]), [[400, { fx: [P.wall] }]]) },
+    { id: "boing", cat: "Fall", name: "Boing", trig: "Bounces, then ta-da", frames: IN_SMALL.concat(BOING) },
+    { id: "thud", cat: "Fall", name: "Butt thud", trig: "Medium drop · lands sitting, sees stars", frames: IN_SMALL.concat(THUD) },
+    { id: "hero", cat: "Fall", name: "Hero landing", trig: "Medium drop · rare and dramatic", frames: IN_SMALL.concat(HERO) },
+    { id: "stuck", cat: "Fall", name: "Stuck", trig: "Big drop · head in the floor, legs kicking", frames: IN_BIG.concat(STUCK) },
+    { id: "pancake", cat: "Fall", name: "Pancake", trig: "Big drop · flattened, peels back up", frames: IN_BIG.concat(PANCAKE) },
+    { id: "roll", cat: "Fall", name: "Roll out", trig: "Big drop · tumbles along the ground", libDx: -2, frames: IN_BIG.concat(ROLL) },
+    { id: "legsup", cat: "Fall", name: "Legs up", trig: "Big drop · flat on its back, feet twitching", frames: IN_BIG.concat(LEGSUP) }
+  ];
+
+  function finish(a) {
+    a.loop = a.frames.reduce((s, f) => s + f[0], 0);
+    const parts = new Set();
+    a.frames.forEach(([, p]) => {
+      if (p.eyes || p.gx || p.gy) parts.add("eyes");
+      if (p.headDy || p.headDx) parts.add("head");
+      if (p.hands) parts.add("hands");
+      if (p.legs || p.kick) parts.add("legs");
+      if (p.dx || p.dy || p.bodyDy || p.dxF) parts.add("body");
+      if (p.flip) parts.add("turn");
+      if (p.rot) parts.add("rotate");
+      if (p.lie) parts.add("template");
+      if (p.fx) parts.add("particles");
+      if (p.reveal !== undefined || p.tint || p.rowShift || p.ghost) parts.add("signal");
+    });
+    a.parts = Array.from(parts);
+    return a;
+  }
+  ANIMS.forEach(finish);
+  const A = Object.fromEntries(ANIMS.map((a) => [a.id, a]));
+  const SEQ = {
+    boot: finish({ frames: BOOT_IN }), lieDown: finish({ frames: LIE_DOWN }), getUp: finish({ frames: GET_UP }),
+    hardland: finish({ frames: HARD_IMPACT }), splat: finish({ frames: SPLAT_IMPACT }), daze: finish({ frames: DAZE }),
+    boing: finish({ frames: BOING }), thud: finish({ frames: THUD }), hero: finish({ frames: HERO }), stuck: finish({ frames: STUCK }),
+    pancake: finish({ frames: PANCAKE }), roll: finish({ frames: ROLL }), legsup: finish({ frames: LEGSUP })
+  };
+
+  function poseAt(a, t) {
+    let tt = ((t % a.loop) + a.loop) % a.loop;
+    for (const [d, p] of a.frames) { if (tt < d) return p; tt -= d; }
+    return a.frames[0][1];
+  }
+  function draw(ctx, pix, ox, oy, S) {
+    for (const [x, y, c] of pix) { ctx.fillStyle = c; ctx.fillRect((ox + x) * S, (oy + y) * S, S, S); }
+  }
+
+  // Exposed for tooling and tests
+  window.REPLICANT_ENGINE = { MASK, AN, REPS, LEGS, TEMPLATES, ANIMS, compose, poseAt };
+  if (typeof document === "undefined") return;
+
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let running = !reduce;
+  const toggle = document.getElementById("toggle");
+  toggle.textContent = running ? "Pause" : "Play";
+  toggle.addEventListener("click", () => { running = !running; toggle.textContent = running ? "Pause" : "Play"; });
+  const countEl = document.getElementById("animCount");
+  if (countEl) countEl.textContent = String(ANIMS.length);
+
+  // ---------- Anatomy panel ----------
+  const PARTS = [
+    { key: "head", col: "#5A5A6E", name: "Head", where: "rows 0–3", what: "Bobs, droops and leans as one block. Hair and hats ride along." },
+    { key: "eye", col: "#E8E8EE", name: "Eyes", where: "row 2, cols 3 and 5", what: "Blink, glance sideways, look up or down onto bare face." },
+    { key: "lid", col: "#A9A9BA", name: "Lid", where: "row 2, col 4", what: "Its color closes the eyes, so shades and visors never blink." },
+    { key: "torso", col: "#3D7BE0", name: "Torso", where: "rows 4–5", what: "Squashes for sitting, crouching and landings." },
+    { key: "sleeve", col: "#8FC2FF", name: "Sleeves", where: "row 4, cols 0 and 6", what: "Stretch into raised and reaching arms." },
+    { key: "hand", col: "#F2C230", name: "Hands", where: "row 5, cols 0 and 7", what: "Wave, point, clap, hold props, cover the face." },
+    { key: "leg", col: "#7A55D0", name: "Legs", where: "row 6", what: "Swap stance patterns: stride, tuck, dangle, kick." },
+    { key: "tpl", col: "#2FB3A0", name: "Templates", where: "lying, flat, curled", what: "Redrawn from the same parts using each replicant's majority colors." }
+  ];
+  const partAt = (r, c) => {
+    if (MASK[r][c] === ".") return null;
+    if (AN.eyes.some(([a, b]) => a === r && b === c)) return "eye";
+    if (r === AN.lid[0] && c === AN.lid[1]) return "lid";
+    if (r <= 3) return "head";
+    if (r === 4 && (c === 0 || c === 6)) return "sleeve";
+    if (r === 5 && (c === 0 || c === 7)) return "hand";
+    if (r === 6) return "leg";
+    return "torso";
+  };
+  const anatGrid = document.getElementById("anatGrid"), anatLegend = document.getElementById("anatLegend");
+  if (anatGrid) {
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 8; c++) {
+      const s = document.createElement("span"), k = partAt(r, c);
+      s.style.background = k ? PARTS.find((p) => p.key === k).col : "transparent";
+      if (!k) s.style.boxShadow = "inset 0 0 0 1px #22222B";
+      anatGrid.appendChild(s);
+    }
+    PARTS.forEach((p) => {
+      const li = document.createElement("li");
+      const sw = document.createElement("i"); sw.style.background = p.col;
+      const tx = document.createElement("span");
+      const b = document.createElement("b"); b.textContent = p.name;
+      tx.appendChild(b);
+      tx.appendChild(document.createTextNode(" (" + p.where + ")"));
+      tx.appendChild(document.createElement("br"));
+      tx.appendChild(document.createTextNode(p.what));
+      li.appendChild(sw); li.appendChild(tx);
+      anatLegend.appendChild(li);
+    });
+  }
+
+  // ---------- Library cards, filters and cast ----------
+  const libEl = document.getElementById("lib");
+  const CAST_N = 7;
+  let cast = [0, 1, 2, 3, 4, 5, 6];
+  const castEl = document.getElementById("cast");
+  const showCast = () => { castEl.textContent = "Cast: " + cast.map((i) => REPS[i].name).join(", "); };
+  showCast();
+  document.getElementById("shuffle").addEventListener("click", () => {
+    const pool = REPS.map((_, i) => i);
+    for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+    cast = pool.slice(0, CAST_N);
+    showCast();
+  });
+
+  const LIB_W = FW * CAST_N, LIB_H = FH + 1;
+  const cards = ANIMS.map((a) => {
+    const card = document.createElement("article");
+    card.className = "card";
+    card.innerHTML =
+      '<div class="card-head"><span class="card-name"><span class="nm"></span><small></small></span><span class="trig"></span></div>' +
+      '<div class="cbox"><canvas role="img"></canvas></div>' +
+      '<div class="card-foot"><div class="chips"></div><span class="meta"></span></div>';
+    card.querySelector(".nm").textContent = a.name;
+    card.querySelector("small").textContent = a.cat;
+    card.querySelector(".trig").textContent = a.trig;
+    const chips = card.querySelector(".chips");
+    a.parts.forEach((p) => { const s = document.createElement("span"); s.className = "chip"; s.textContent = p; chips.appendChild(s); });
+    card.querySelector(".meta").textContent = a.frames.length + " frames · " + (a.loop / 1000).toFixed(1) + " s loop";
+    const cv = card.querySelector("canvas");
+    cv.setAttribute("aria-label", a.name + " animation on seven replicants");
+    libEl.appendChild(card);
+    return {
+      a, card, cv, ctx: cv.getContext("2d"), box: card.querySelector(".cbox"), S: 4, visible: true,
+      sprites: Array.from({ length: CAST_N }, () => ({ phase: Math.random() * a.loop, next: 800 + Math.random() * 4000, blink: 0 }))
+    };
+  });
+
+  const CATS = ["All", "Idle", "Move", "Emote", "Action", "Life", "Sleep", "Fall"];
+  const filtersEl = document.getElementById("filters");
+  const fbtns = CATS.map((cat) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "fbtn"; b.id = "filter-" + cat.toLowerCase();
+    const n = cat === "All" ? ANIMS.length : ANIMS.filter((a) => a.cat === cat).length;
+    b.innerHTML = cat + "<span>" + n + "</span>";
+    b.addEventListener("click", () => setFilter(cat));
+    filtersEl.appendChild(b);
+    return { cat, b };
+  });
+  function setFilter(cat) {
+    fbtns.forEach((f) => f.b.setAttribute("aria-pressed", f.cat === cat ? "true" : "false"));
+    cards.forEach((c) => { c.card.hidden = !(cat === "All" || c.a.cat === cat); });
+    fitLib();
+  }
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { const c = cards.find((k) => k.card === e.target); if (c) c.visible = e.isIntersecting; });
+    }, { rootMargin: "200px" });
+    cards.forEach((c) => io.observe(c.card));
+  }
+  function fitLib() {
+    cards.forEach((c) => {
+      if (c.card.hidden) return;
+      const w = c.box.clientWidth - 16;
+      c.S = Math.max(2, Math.floor(w / LIB_W));
+      c.cv.width = LIB_W * c.S; c.cv.height = LIB_H * c.S;
+      c.cv.style.width = (LIB_W * c.S) + "px"; c.cv.style.height = (LIB_H * c.S) + "px";
+    });
+  }
+  function tickLib(dt) {
+    cards.forEach((c) => {
+      if (!c.a.blinks) return;
+      c.sprites.forEach((s) => {
+        s.blink = Math.max(0, s.blink - dt);
+        s.next -= dt;
+        if (s.next <= 0) { s.blink = 120; s.next = Math.random() < 0.2 ? 260 : 2000 + Math.random() * 4000; }
+      });
+    });
+  }
+  function drawLib(clock) {
+    cards.forEach((c) => {
+      if (c.card.hidden || !c.visible) return;
+      const { ctx, S, a } = c;
+      ctx.fillStyle = "#0E0E14"; ctx.fillRect(0, 0, c.cv.width, c.cv.height);
+      ctx.fillStyle = "#22222B"; ctx.fillRect(0, FH * S, c.cv.width, S);
+      if (a.scroll) {
+        const off = Math.floor(clock * a.scroll);
+        ctx.fillStyle = "#454552";
+        for (let x = 0; x < LIB_W; x++) if (((x + off) % 6 + 6) % 6 === 0) ctx.fillRect(x * S, FH * S, S, S);
+      }
+      cast.forEach((ri, i) => {
+        const s = c.sprites[i];
+        let p = poseAt(a, clock + s.phase);
+        if (a.blinks && s.blink > 0) p = merge(p, { eyes: "closed" });
+        draw(ctx, compose(REPS[ri], p), i * FW + (a.libDx || 0), 0, S);
+      });
+    });
+  }
+
+  // ---------- Desktop life loop ----------
+  const SW = 256, SH = 128, FLOOR = 122, Y0 = FLOOR - FH, G = 0.0004;
+  const PLATS = [
+    { x0: 36, x1: 96, y: 98, bottom: 116 },
+    { x0: 112, x1: 176, y: 66, bottom: 92 },
+    { x0: 160, x1: 232, y: 30, bottom: 58 }
+  ];
+  const stage = document.getElementById("stage");
+  const sctx = stage.getContext("2d");
+  const stageWrap = document.getElementById("stageWrap");
+  let SS = 4;
+
+  const overlap = (x, pl) => x + OX + 6 >= pl.x0 + 1 && x + OX + 1 <= pl.x1 - 1;
+  const safeRange = (pl) => [pl.x0 - OX - 1, pl.x1 - OX - 6];
+  function supportFor(x, prevY) {
+    let best = Y0, on = null;
+    PLATS.forEach((pl) => {
+      const top = pl.y - FH;
+      if (overlap(x, pl) && prevY <= top + 0.001 && top < best) { best = top; on = pl; }
+    });
+    return { y: best, on };
+  }
+
+  const DESK = ["Classic", "Long Hair", "Astronaut", "Punk", "Pirate", "Royal", "Gamer"].map((n) => REPS.find((r) => r.name === n));
+  const START = [
+    { x: 6, plat: null, energy: 0.9, mood: 0.6 }, { x: 104, plat: null, energy: 0.3, mood: 0.2 },
+    { x: 196, plat: 2, energy: 0.75, mood: 0.7 }, { x: 236, plat: null, energy: 0.55, mood: 0.85 },
+    { x: 52, plat: 0, energy: 0.16, mood: 0.5 }, { x: 184, plat: null, energy: 0.8, mood: 0.65 },
+    { x: 134, plat: 1, energy: 0.6, mood: 0.8 }
+  ];
+  const life = DESK.map((rp, i) => {
+    const s = START[i], pl = s.plat === null ? null : PLATS[s.plat];
+    return {
+      rep: rp, i, x: s.x, y: pl ? pl.y - FH : Y0, on: pl, flip: Math.random() < 0.5,
+      state: "boot", t: -Math.random() * 1600, dur: 0, sleepKind: "nod",
+      energy: s.energy, mood: s.mood, social: 0.3 + Math.random() * 0.6,
+      next: 600 + Math.random() * 3000, blink: 0, walkTo: 0, step: 0, stepT: 0, vx: 0, vy: 0, peak: 0, tumbled: false
+    };
+  });
+  let selected = life[0];
+  const pointer = { x: -999, y: -999, inside: false };
+  let drag = null;
+
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const cx = (L) => L.x + OX + 4;
+  const AIR = ["held", "fall", "boot", "wallhit", "wallslide"];
+  const cursorNear = (L) => pointer.inside && Math.abs(pointer.x - cx(L)) < 60 && Math.abs(pointer.y - (L.y + OY + 3)) < 30;
+  function neighbor(L) {
+    let best = null, bd = 18;
+    life.forEach((o) => {
+      if (o === L || AIR.includes(o.state) || o.state === "sleep" || Math.abs(o.y - L.y) > 1) return;
+      const d = Math.abs(cx(o) - cx(L));
+      if (d < bd) { bd = d; best = o; }
+    });
+    return best;
+  }
+  const pickW = (w) => {
+    let r = Math.random() * w.reduce((s, x) => s + x[1], 0);
+    for (const [s, v] of w) { r -= v; if (r <= 0) return s; }
+    return w[0][0];
+  };
+
+  function start(L, s) {
+    L.state = s; L.t = 0;
+    if (s === "idle") L.dur = 1200 + Math.random() * 2600;
+    else if (s === "walk" || s === "run") {
+      const run = s === "run";
+      const dist = run ? 24 + Math.floor(Math.random() * 50) : 8 + Math.floor(Math.random() * 36);
+      let dir = Math.random() < 0.5 ? -1 : 1;
+      if (L.social > 0.6 && pointer.inside) dir = pointer.x < cx(L) ? -1 : 1;
+      L.walkTo = clamp(L.x + dir * dist, 0, SW - FW);
+      if (Math.abs(L.walkTo - L.x) < 4) L.walkTo = clamp(L.x - dir * dist, 0, SW - FW);
+      if (L.on && Math.random() < 0.6) { const [lo, hi] = safeRange(L.on); L.walkTo = clamp(L.walkTo, lo, hi); }
+      if (L.walkTo === L.x) { start(L, "idle"); return; }
+      L.flip = L.walkTo < L.x; L.step = 0; L.stepT = 0;
+    } else if (s === "lieDown") {
+      L.sleepKind = pickW([["nod", 3], ["bubble", 2], ["curl", 3], ["sprawl", 2], ["stand", 1]]);
+      if (L.sleepKind === "stand") L.state = "sleep";
+    } else if (["hop", "dance", "cheer", "jacks", "lift", "cartwheel", "skip"].includes(s)) L.energy = Math.max(0, L.energy - 0.05);
+    else if (s === "fall") { L.peak = L.y; L.tumbled = false; L.on = null; }
+  }
+
+  // How likely each animation is right now: energy (e), mood (m), social (so), cursor near, a friend near (nb)
+  const WEIGHTS = {
+    lieDown: (e) => e < 0.2 ? 10 : e < 0.4 ? 0.5 : 0.04,
+    walk: (e) => 2.2 * e + 0.2, run: (e, m) => m > 0.55 && e > 0.5 ? 1.4 * m * e : 0.04,
+    hop: (e, m) => m * e, dance: (e, m) => m > 0.7 && e > 0.4 ? 1.2 * m : 0.06, sneak: () => 0.15,
+    moonwalk: (e, m) => m > 0.7 ? 0.3 : 0.02, skip: (e, m) => m > 0.6 && e > 0.5 ? 0.5 : 0.03,
+    cartwheel: (e, m) => m > 0.7 && e > 0.6 ? 0.35 : 0.02, spin: (e, m) => m > 0.6 ? 0.3 : 0.03,
+    cheer: (e, m) => m > 0.75 ? 0.5 : 0.04,
+    wave: (e, m, so, near, nb) => near ? 3 * so : nb ? 0.8 * so : 0.2 * so,
+    love: (e, m, so, near, nb) => nb && so > 0.6 ? 1.2 : 0.06,
+    nod: (e, m, so, near, nb) => near || nb ? 0.6 * so : 0.06, no: () => 0.1,
+    salute: (e, m, so, near) => near ? 0.4 * so : 0.03, bow: (e, m, so, near) => near ? 0.4 * so : 0.03,
+    point: (e, m, so, near) => near ? 0.4 : 0.08, clap: (e, m, so, near) => near ? 0.6 * so : 0.05,
+    thumbs: (e, m, so, near) => near ? 0.5 : 0.05, blush: (e, m, so, near) => near && so > 0.5 ? 0.6 : 0.03,
+    giggle: (e, m) => m > 0.6 ? 0.4 : 0.05, proud: (e, m) => m > 0.7 ? 0.3 : 0.03,
+    think: () => 0.7, look: () => 0.9, confused: () => 0.2, hum: (e, m) => 0.6 * m, whistle: (e, m) => 0.4 * m,
+    laugh: (e, m) => m > 0.7 ? 0.6 : 0.08, sad: (e, m) => m < 0.25 ? 1.4 : 0.04, cry: (e, m) => m < 0.15 ? 1 : 0.01,
+    angry: (e, m) => m < 0.25 ? 0.8 : 0.02, shrug: () => 0.2, facepalm: () => 0.15, scared: () => 0.06,
+    surprise: () => 0.08, shiver: () => 0.12, bored: (e, m) => e < 0.6 && m < 0.5 ? 0.6 : 0.08,
+    sway: (e, m) => m > 0.5 ? 0.4 : 0.08, stargaze: () => 0.25, peek: () => 0.25, scratch: () => 0.3,
+    tapfoot: () => 0.25, watch: () => 0.2, yawn: (e) => e < 0.45 ? 1 : 0.08, sneeze: () => 0.08,
+    sit: (e) => e < 0.5 ? 1.1 : 0.3, eat: (e) => e < 0.45 ? 1 : 0.12, coffee: (e) => e < 0.55 ? 0.7 : 0.1,
+    charge: (e) => e < 0.35 ? 0.9 : 0.03, read: () => 0.35, laptop: () => 0.3, phone: () => 0.4,
+    juggle: (e, m) => m > 0.6 ? 0.35 : 0.05, throw: () => 0.15, sweep: () => 0.15,
+    jacks: (e) => e > 0.7 ? 0.5 : 0.03, lift: (e) => e > 0.7 ? 0.35 : 0.02,
+    kick: (e) => 0.2 * e, glitch: () => 0.08, teleport: () => 0.05, overheat: (e, m) => e < 0.3 && m < 0.5 ? 0.3 : 0.02,
+    download: () => 0.12, replicate: () => 0.06, idle: () => 2
+  };
+  function choose(L) {
+    const near = cursorNear(L), nb = neighbor(L);
+    const pick = pickW(Object.keys(WEIGHTS).map((k) => [k, WEIGHTS[k](L.energy, L.mood, L.social, near, nb)]));
+    if (["wave", "love", "nod", "clap", "blush"].includes(pick)) {
+      if (near && (pick !== "love" || !nb)) L.flip = pointer.x < cx(L);
+      else if (nb) L.flip = cx(nb) < cx(L);
+    }
+    return pick;
+  }
+
+  function impact(L) {
+    const d = L.y - L.peak;
+    L.x = Math.round(L.x); L.vx = 0; L.vy = 0;
+    if (L.tumbled || d >= 26) start(L, pickW([["splat", 3], ["stuck", 2], ["pancake", 2], ["roll", 2], ["legsup", 2], ["boing", 1]]));
+    else if (d >= 9) start(L, pickW([["hardland", 3], ["boing", 2], ["thud", 2], ["hero", 0.7]]));
+    else start(L, "land");
+  }
+
+  const AFTER = {
+    lieDown: "sleep", getUp: "stretch", splat: "confused", hardland: "idle", daze: "idle", boot: "look",
+    stuck: "confused", pancake: "shiver", roll: "idle", legsup: "idle", boing: "idle", thud: "idle", hero: "idle"
+  };
+  const ENERGY_GAIN = { eat: 0.12, coffee: 0.15, charge: 0.3 };
+
+  function tickLife(dt) {
+    life.forEach((L) => {
+      L.t += dt;
+      if (!["sleep", "held", "boot"].includes(L.state)) L.energy = Math.max(0, L.energy - dt / 160000);
+      L.mood = clamp(L.mood + (Math.random() - 0.5) * dt / 30000, 0.05, 1);
+      L.social = clamp(L.social + (Math.random() - 0.5) * dt / 30000, 0.05, 1);
+      L.blink = Math.max(0, L.blink - dt);
+      L.next -= dt;
+      if (L.next <= 0) { L.blink = 120; L.next = Math.random() < 0.2 ? 260 : 2000 + Math.random() * 4000; }
+
+      switch (L.state) {
+        case "idle":
+          if (L.social > 0.35 && cursorNear(L)) L.flip = pointer.x < cx(L);
+          if (L.t > L.dur) start(L, choose(L));
+          break;
+        case "walk": case "run": {
+          const run = L.state === "run", ms = run ? 90 : 120, px = run ? 2 : 1;
+          L.stepT += dt;
+          while (L.stepT >= ms && (L.state === "walk" || L.state === "run")) {
+            L.stepT -= ms;
+            if (L.x === L.walkTo) { start(L, run && Math.random() < 0.4 ? "cheer" : "idle"); break; }
+            const d = L.walkTo - L.x, dir = Math.sign(d);
+            L.x += dir * Math.min(px, Math.abs(d)); L.step++;
+            L.energy = Math.max(0, L.energy - (run ? 0.004 : 0.002));
+            if (L.on && !overlap(L.x, L.on)) { start(L, "fall"); L.vx = dir * (run ? 0.09 : 0.035); L.vy = 0; break; }
+          }
+          break;
+        }
+        case "sleep":
+          L.energy = Math.min(1, L.energy + dt / 14000);
+          if (L.energy >= 0.97 && L.t > 5000) start(L, "getUp");
+          break;
+        case "held":
+          break;
+        case "fall": {
+          const prevY = L.y;
+          L.vy += dt * G; L.x += L.vx * dt; L.y += L.vy * dt;
+          if (L.y < L.peak) L.peak = L.y;
+          if (L.y < -OY) { L.y = -OY; if (L.vy < 0) L.vy = 0; }
+          if (L.y - L.peak >= 22) L.tumbled = true;
+          const minX = -OX, maxX = SW - OX - 8;
+          if (L.x <= minX || L.x >= maxX) {
+            const right = L.x >= maxX;
+            L.x = clamp(L.x, minX, maxX);
+            // Usually it bounces off the screen edge; only a hard throw sometimes ends in a wall splat.
+            if (Math.abs(L.vx) > 0.15 && Math.random() < 0.25) { L.flip = !right; L.x = Math.round(L.x); L.vx = 0; L.vy = 0; start(L, "wallhit"); break; }
+            L.vx = -L.vx * 0.35;
+          }
+          if (L.vy >= 0) {
+            const sup = supportFor(L.x, prevY);
+            if (L.y >= sup.y) { L.y = sup.y; L.on = sup.on; impact(L); }
+          }
+          break;
+        }
+        case "wallhit":
+          if (L.t > 420) { start(L, "wallslide"); L.peak = L.y; }
+          break;
+        case "wallslide": {
+          const prevY = L.y;
+          L.y += dt * 0.02;
+          const sup = supportFor(L.x, prevY);
+          if (L.y >= sup.y) { L.y = sup.y; L.on = sup.on; start(L, "daze"); }
+          break;
+        }
+        case "land":
+          if (L.t > 170) start(L, "surprise");
+          break;
+        default: {
+          const a = SEQ[L.state] || A[L.state];
+          if (L.t >= a.loop) {
+            if (ENERGY_GAIN[L.state]) L.energy = Math.min(1, L.energy + ENERGY_GAIN[L.state]);
+            if (["laugh", "cheer", "boing", "hero", "dance"].includes(L.state)) L.mood = Math.min(1, L.mood + 0.06);
+            if (["splat", "stuck", "pancake"].includes(L.state)) L.mood = Math.max(0.05, L.mood - 0.08);
+            if (L.state === "roll") {
+              L.x = clamp(L.x + (L.flip ? -3 : 3), 0, SW - FW);
+              if (L.on && !overlap(L.x, L.on)) { start(L, "fall"); L.vx = (L.flip ? -1 : 1) * 0.03; L.vy = 0; return; }
+            }
+            start(L, AFTER[L.state] || "idle");
+          }
+        }
+      }
+    });
+  }
+
+  const NOBLINK = new Set(["sleep", "boot", "lieDown", "getUp", "splat", "wallhit", "wallslide", "stuck", "pancake", "roll", "legsup", "thud"]);
+  function lifePose(L) {
+    let p;
+    switch (L.state) {
+      case "boot": p = L.t < 0 ? { reveal: 0 } : poseAt(SEQ.boot, L.t); break;
+      case "idle": {
+        const watching = L.social > 0.35 && cursorNear(L);
+        p = { headDy: Math.floor((L.t + L.i * 300) / 800) % 2 };
+        if (watching && pointer.y < L.y + OY - 2) p.gy = -1;
+        break;
+      }
+      case "walk": p = WALK[L.step % WALK.length][1]; break;
+      case "run": p = RUN[L.step % RUN.length][1]; break;
+      case "sleep": p = poseAt(A["sleep_" + L.sleepKind], L.t); break;
+      case "held": p = UP; break;
+      case "fall": {
+        const d = L.y - L.peak;
+        if (L.tumbled) p = merge(TUCK, { rot: TUMBLE_ROT[Math.floor(L.t / 90) % 4] });
+        else if (d >= 10) p = FLAIL[Math.floor(L.t / 90) % 4][1];
+        else p = UP;
+        break;
+      }
+      case "wallhit": p = merge(UP, { eyes: "closed", fx: [P.wallHit] }); break;
+      case "wallslide": p = merge(UP, { eyes: "closed" }); break;
+      case "land": p = { headDy: 1 }; break;
+      default: p = poseAt(SEQ[L.state] || A[L.state], L.t);
+    }
+    p = merge(p);
+    if (L.blink > 0 && !p.lie && !NOBLINK.has(L.state)) p.eyes = "closed";
+    p.flip = L.flip !== !!p.flip;
+    return p;
+  }
+
+  function fitStage() {
+    const w = stageWrap.clientWidth - 32;
+    SS = clamp(Math.floor(w / SW), 1, 5);
+    stage.width = SW * SS; stage.height = SH * SS;
+    stage.style.width = (SW * SS) + "px"; stage.style.height = (SH * SS) + "px";
+  }
+
+  function drawStage() {
+    const S = SS, R = (x, y, w, h, c) => { sctx.fillStyle = c; sctx.fillRect(x * S, y * S, w * S, h * S); };
+    R(0, 0, SW, SH, "#0E0E14");
+    sctx.fillStyle = "#17171E";
+    for (let y = 4; y < FLOOR; y += 8) for (let x = 4; x < SW; x += 8) sctx.fillRect(x * S, y * S, S, S);
+    PLATS.forEach((pl) => {
+      const w = pl.x1 - pl.x0 + 1, h = pl.bottom - pl.y + 1;
+      R(pl.x0, pl.y, w, h, "#2A2A36");
+      R(pl.x0 + 1, pl.y + 3, w - 2, h - 4, "#121219");
+      R(pl.x0 + 1, pl.y + 1, w - 2, 2, "#22222C");
+      R(pl.x0 + 2, pl.y + 1, 1, 1, "#E8675F"); R(pl.x0 + 4, pl.y + 1, 1, 1, "#F2C230"); R(pl.x0 + 6, pl.y + 1, 1, 1, "#4DF07A");
+      for (let k = 0; k < 3; k++) R(pl.x0 + 4, pl.y + 6 + k * 4, Math.max(4, w - 12 - k * 9), 1, "#24242E");
+    });
+    R(0, FLOOR, SW, SH - FLOOR, "#15151C");
+    R(0, FLOOR, SW, 1, "#262630");
+    ["#3A3A48", "#3A3A48", "#8FC2FF", "#3A3A48"].forEach((c, k) => R(3 + k * 5, FLOOR + 2, 3, 3, c));
+    R(SW - 14, FLOOR + 3, 11, 1, "#3A3A48");
+    if (!AIR.includes(selected.state)) R(Math.round(selected.x) + OX, Math.round(selected.y) + FH, 8, 1, "#8FC2FF");
+    const lifted = (L) => AIR.includes(L.state) ? 1 : 0;
+    life.slice().sort((a, b) => lifted(a) - lifted(b)).forEach((L) => draw(sctx, compose(L.rep, lifePose(L)), Math.round(L.x), Math.round(L.y), S));
+  }
+
+  function toStage(e) {
+    const r = stage.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / SS, y: (e.clientY - r.top) / SS };
+  }
+  function hit(pt) {
+    for (let k = life.length - 1; k >= 0; k--) {
+      const L = life[k];
+      if (L.state === "boot" && L.t < 0) continue;
+      const x0 = L.x + OX - 1, x1 = L.x + OX + 9, y0 = L.y + OY - 1, y1 = L.y + OY + 7;
+      if (pt.x >= x0 && pt.x < x1 && pt.y >= y0 && pt.y < y1) return L;
+    }
+    return null;
+  }
+  stage.addEventListener("pointerdown", (e) => {
+    const pt = toStage(e);
+    const L = hit(pt);
+    if (!L) return;
+    stage.setPointerCapture(e.pointerId);
+    drag = { L, ox: pt.x - L.x, oy: pt.y - L.y, sx: pt.x, sy: pt.y, moved: false, lastX: pt.x, hist: [{ x: pt.x, y: pt.y, t: performance.now() }] };
+    select(L);
+  });
+  stage.addEventListener("pointermove", (e) => {
+    const pt = toStage(e);
+    pointer.x = pt.x; pointer.y = pt.y; pointer.inside = true;
+    if (drag) {
+      const L = drag.L;
+      if (!drag.moved && Math.abs(pt.x - drag.sx) + Math.abs(pt.y - drag.sy) > 2) { drag.moved = true; L.state = "held"; L.t = 0; L.on = null; }
+      if (!drag.moved) return;
+      drag.hist.push({ x: pt.x, y: pt.y, t: performance.now() });
+      if (drag.hist.length > 8) drag.hist.shift();
+      if (pt.x !== drag.lastX) L.flip = pt.x < drag.lastX;
+      drag.lastX = pt.x;
+      L.x = clamp(Math.round(pt.x - drag.ox), -OX, SW - OX - 8);
+      L.y = Math.min(Y0, Math.max(-OY, Math.round(pt.y - drag.oy)));
+    } else {
+      stage.style.cursor = hit(pt) ? "grab" : "default";
+    }
+  });
+  function release() {
+    if (!drag) return;
+    const L = drag.L;
+    if (!drag.moved) {
+      const reactions = ["wave", "love", "laugh", "salute", "bow", "blush", "giggle", "thumbs", "clap"];
+      if (!AIR.includes(L.state) && L.state !== "sleep") {
+        L.flip = pointer.x < cx(L);
+        start(L, reactions[Math.floor(Math.random() * reactions.length)]);
+      } else if (L.state === "sleep") start(L, "getUp");
+      L.social = Math.min(1, L.social + 0.1);
+      L.mood = Math.min(1, L.mood + 0.05);
+    } else {
+      const now = performance.now(), h = drag.hist;
+      let s = h[0];
+      for (const q of h) if (now - q.t >= 60) s = q;
+      const last = h[h.length - 1], span = Math.max(16, last.t - s.t);
+      start(L, "fall");
+      L.vx = clamp((last.x - s.x) / span, -0.35, 0.35);
+      L.vy = clamp((last.y - s.y) / span, -0.35, 0.2);
+      if (now - last.t > 120) { L.vx = 0; L.vy = 0; }
+      L.peak = L.y;
+    }
+    drag = null;
+  }
+  stage.addEventListener("pointerup", release);
+  stage.addEventListener("pointercancel", release);
+  stage.addEventListener("pointerleave", () => { if (!drag) pointer.inside = false; });
+
+  // ---------- Roster and drive sliders ----------
+  const NAMES = {
+    idle: "Idle", walk: "Walking", run: "Running", held: "Picked up", fall: "Falling", land: "Landing",
+    boot: "Booting up", lieDown: "Getting sleepy", getUp: "Waking up", hardland: "Hard landing", splat: "Splat",
+    wallhit: "Hit the wall", wallslide: "Sliding down", daze: "Dazed"
+  };
+  ANIMS.forEach((a) => { if (!NAMES[a.id]) NAMES[a.id] = a.name; });
+  const stateName = (L) => L.state === "sleep" ? "Asleep · " + A["sleep_" + L.sleepKind].name.toLowerCase() : (NAMES[L.state] || L.state);
+  const rosterEl = document.getElementById("roster");
+  const rows = life.map((L) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "rbtn"; b.id = "rep-" + L.i;
+    b.innerHTML = '<span class="rname"></span><span class="rstate"></span><span class="meter" aria-hidden="true"><i></i></span>';
+    b.querySelector(".rname").textContent = L.rep.name;
+    b.addEventListener("click", () => select(L));
+    rosterEl.appendChild(b);
+    return { L, b, st: b.querySelector(".rstate"), bar: b.querySelector(".meter i") };
+  });
+  const sliders = ["energy", "mood", "social"].map((k) => {
+    const el = document.getElementById(k), out = document.getElementById(k + "Out");
+    el.addEventListener("input", () => {
+      selected[k] = el.value / 100;
+      out.textContent = el.value + "%";
+      if (k === "energy" && selected.state === "sleep" && selected.energy > 0.5) start(selected, "getUp");
+      if (k === "energy" && selected.energy < 0.2 && selected.state === "idle") start(selected, "lieDown");
+      if (k === "mood" && selected.mood < 0.2 && selected.state === "idle") start(selected, "sad");
+    });
+    return { k, el, out };
+  });
+  const somaName = document.getElementById("somaName"), somaState = document.getElementById("somaState");
+  function select(L) {
+    selected = L;
+    rows.forEach((r) => r.b.setAttribute("aria-pressed", r.L === L ? "true" : "false"));
+    somaName.textContent = L.rep.name;
+    updateUI(true);
+  }
+  const energyColor = (v) => v < 0.25 ? "#E8675F" : v < 0.5 ? "#F2C230" : "#8FC2FF";
+  function updateUI(force) {
+    rows.forEach((r) => {
+      r.st.textContent = stateName(r.L);
+      r.bar.style.width = Math.round(r.L.energy * 100) + "%";
+      r.bar.style.background = energyColor(r.L.energy);
+    });
+    somaState.textContent = stateName(selected);
+    sliders.forEach((s) => {
+      if (force || document.activeElement !== s.el) {
+        const v = Math.round(selected[s.k] * 100);
+        s.el.value = v; s.out.textContent = v + "%";
+      }
+    });
+  }
+  select(selected);
+  setInterval(() => updateUI(false), 250);
+
+  // ---------- Main loop ----------
+  setFilter("All");
+  fitStage();
+  if ("ResizeObserver" in window) {
+    const ro = new ResizeObserver(() => { fitLib(); fitStage(); });
+    ro.observe(stageWrap); ro.observe(libEl);
+  } else {
+    window.addEventListener("resize", () => { fitLib(); fitStage(); });
+  }
+  let last = performance.now(), clock = 0;
+  function frame(now) {
+    const dt = Math.min(50, now - last); last = now;
+    if (running) { clock += dt; tickLife(dt); tickLib(dt); }
+    drawLib(clock); drawStage();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body></html>

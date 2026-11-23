@@ -1,0 +1,10 @@
+{
+  "name": "ollama",
+  "version": "0.40.15",
+  "asset": "ollama-windows-amd64.zip",
+  "url": "https://github.com/ollama/ollama/releases/download/v0.40.15/ollama-windows-amd64.zip",
+  "sha256": "9ca74a7ab66ec86870b1eecac7df160df08dc4e3a291ab5d2d59bcf9310221c6",
+  "size": 1614941966,
+  "executable": "ollama.exe",
+  "pinned_by": "scripts/pin_local_runtime.py from the GitHub release v0.40.15 (published digest confirmed)"
+}

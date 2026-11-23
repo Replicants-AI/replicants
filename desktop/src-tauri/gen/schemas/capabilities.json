@@ -1,0 +1,1 @@
+{"desktop-local":{"identifier":"desktop-local","description":"Local app windows; native commands never expose screen content or window titles.","local":true,"windows":["overlay","mock","inspector","birth"],"permissions":["core:default","core:window:allow-set-focus"]}}

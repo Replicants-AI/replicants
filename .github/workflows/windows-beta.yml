@@ -1,0 +1,175 @@
+name: Windows beta
+on:
+  workflow_dispatch:
+    inputs:
+      python_only:
+        description: Run the full Windows Python suite without rebuilding or installing
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: windows-beta-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    if: ${{ !inputs.python_only }}
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.10'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.11.0'
+      - name: Cache reviewed Rust dependencies and compilation
+        id: rust-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          key: windows-beta-rust-1.99.1-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: windows-beta-rust-1.99.1-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}-
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+      - name: Install reviewed build dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python -m pip install -e '.[dev,room]' pyinstaller==6.16.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup toolchain install 1.99.1 --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default 1.99.1
+          Push-Location desktop
+          npm ci --ignore-scripts
+          exit $LASTEXITCODE
+      - name: Python suite
+        shell: pwsh
+        run: .venv/Scripts/python -m pytest -q --junitxml=python-results.xml
+      - name: Frontend build and fixtures
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:ui
+          exit $LASTEXITCODE
+      - name: Pin the private local runtime
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          .venv/Scripts/python scripts/pin_local_runtime.py
+          exit $LASTEXITCODE
+      - name: Freeze standalone backend
+        shell: pwsh
+        run: |
+          .venv/Scripts/pyinstaller --noconfirm --distpath build/frozen --workpath build/pyinstaller scripts/desktop_backend.spec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force desktop/src-tauri/binaries/backend | Out-Null
+          Copy-Item -Path build/frozen/replicants-brain/* -Destination desktop/src-tauri/binaries/backend -Recurse
+          .venv/Scripts/pyinstaller --noconfirm --distpath build/frozen --workpath build/room-pyinstaller scripts/room_reader.spec
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath build/frozen/reader -Destination desktop/src-tauri/binaries/backend/reader -Recurse
+      - name: Native unit checks and Windows installer
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          cargo test --release --manifest-path src-tauri/Cargo.toml --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run tauri -- build -- --locked
+          exit $LASTEXITCODE
+      - name: Sign the installer when a certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGNING_CERT_BASE64) { Write-Output 'No signing certificate configured; the installer stays unsigned.'; exit 0 }
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          try {
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+            if (-not $signtool) { throw 'signtool.exe not found on the runner.' }
+            Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*.exe | ForEach-Object {
+              & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:WINDOWS_SIGNING_CERT_PASSWORD $_.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($_.Name)" }
+            }
+          } finally { Remove-Item -Force $pfx -ErrorAction SilentlyContinue }
+      - name: Preserve successful native compilation before product acceptance
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.rust-cache.outputs.cache-primary-key }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+      - name: Record provenance
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force beta-evidence | Out-Null
+          $env:GITHUB_SHA | Set-Content beta-evidence/source-commit.txt
+          .venv/Scripts/python -m pip freeze | Set-Content beta-evidence/python-dependencies.txt
+          rustc --version | Set-Content beta-evidence/rust-version.txt
+          node --version | Set-Content beta-evidence/node-version.txt
+          Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | ForEach-Object { $signature = Get-AuthenticodeSignature -LiteralPath $_.FullName; [pscustomobject]@{File=$_.Name; Status=$signature.Status.ToString()} } | ConvertTo-Json | Set-Content beta-evidence/signatures.json
+          Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*.exe -ErrorAction SilentlyContinue | Get-FileHash -Algorithm SHA256 | Select-Object Hash, @{Name='File';Expression={Split-Path $_.Path -Leaf}} | ConvertTo-Json | Set-Content beta-evidence/checksums.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: replicants-windows-beta-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/ui-artifacts/
+            ${{ runner.temp }}/replicants-beta-evidence/
+            beta-evidence/
+            python-results.xml
+  python-regression:
+    if: ${{ inputs.python_only }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.10'
+      - name: Install complete test dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .venv/Scripts/python -m pip install -e '.[dev,room]'
+          exit $LASTEXITCODE
+      - name: Full Windows Python regression
+        shell: pwsh
+        run: .venv/Scripts/python -m pytest -q --junitxml=windows-python-results.xml
+      - name: Record source
+        if: always()
+        shell: pwsh
+        run: $env:GITHUB_SHA | Set-Content windows-python-source.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: replicants-windows-python-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            windows-python-results.xml
+            windows-python-source.txt

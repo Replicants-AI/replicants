@@ -1,0 +1,72 @@
+.env
+.env.*
+
+# Maintainer / local-only trees (not shipped in this repo)
+onboarding/
+docs-main/
+docs/
+
+# Local wheel cache / offline test installs (never ship)
+dist_test_wheel/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# uv / virtualenv
+.venv/
+venv/
+ENV/
+
+# Local Canary overlay — copy from configs/entities/canary.example.yaml. Docker copies example → canary in the image.
+configs/entities/canary.yaml
+
+# Local databases / entity state
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+desktop/src-tauri/target/
+*.replicant
+*.replicant.bak
+
+# Certificates / keys
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Logs
+*.log
+
+# Secrets catch-all
+secrets/
+
+# direnv
+.envrc
+
+# IDE / OS
+.cursor/
+.claude/
+.cursorrules
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Packaged desktop backend, assembled by the isolated Windows release job.
+desktop/src-tauri/binaries/

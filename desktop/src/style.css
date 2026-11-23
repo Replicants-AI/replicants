@@ -1,0 +1,27 @@
+:root { color-scheme: dark; font-family: ui-monospace, Consolas, monospace; color: #dce1ec; background: transparent; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; user-select: none; }
+#world { position: fixed; inset: 0; z-index: 1; width: 100vw; height: 100vh; image-rendering: pixelated; touch-action: none; }
+.room-window { position: fixed; z-index: 0; overflow: hidden; border: 1px solid #487783; background: #fcfaf3; color: #193c47; box-shadow: 0 8px 24px #10293422; pointer-events: none; }
+.room-window strong, .room-window div { display: block; padding: 2px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 12px/16px system-ui; }
+.room-window img { display: block; width: 100%; height: calc(100% - 40px); object-fit: fill; }
+[hidden] { display: none !important; }
+#chat { position: fixed; padding: 5px; background: #171b26; border: 1px solid #8693ab; z-index: 3; }
+#chat input { width: 230px; border: 0; padding: 5px; outline: none; color: #f1f2f5; background: #222a39; font: 12px Consolas, monospace; }
+#panel { padding: 22px; height: 100vh; overflow-y: auto; background: #121620; font-size: 12px; line-height: 1.6; user-select: text; }
+h1 { font-size: 19px; letter-spacing: -.6px; margin: 0 0 5px; }
+h2 { font-size: 13px; margin: 24px 0 8px; color: #aebdde; }
+p { color: #9aa7bf; margin: 0 0 18px; }
+label { display: grid; grid-template-columns: 85px 1fr 32px; align-items: center; gap: 6px; margin: 12px 0; }
+input[type=range] { width: 100%; accent-color: #b2bad8; }
+button, select { border: 1px solid #3b465f; background: #202839; color: #e6eaf1; padding: 7px 10px; margin: 3px; border-radius: 3px; font: inherit; cursor: pointer; }
+button:hover { background: #344363; }
+pre { font: 10px Consolas, monospace; color: #9eabc5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.quiet { color: #74839e; font-size: 11px; }
+details { margin: 14px 0; border-top: 1px solid #293349; padding-top: 10px; }
+summary { color: #bac9e7; cursor: pointer; }
+#identity, #clocks { white-space: pre-line; overflow-wrap: anywhere; }
+
+.room-page { display: block; width: 100%; height: auto; border: 1px solid #d4dfde; background: #fcfaf3; }
+.room-source { overflow-wrap: anywhere; font-size: 12px; color: #536866; }
+#room-history li { margin-block: 12px; }
