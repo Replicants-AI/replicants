@@ -108,7 +108,9 @@ Graphics memory is sensed on NVIDIA only; other machines are judged by system me
 
 ## install
 
-Get the installer from [Releases](https://github.com/Replicants-AI/replicants/releases), run it, open Replicants and choose **Set up** on Home. The [beta guide](reports/beta-guide.md) covers the rest.
+The installer is coming soon. Until then, build from source below. Installers will appear in [Releases](https://github.com/Replicants-AI/replicants/releases).
+
+Once it's installed, open Replicants and choose **Set up** on Home. The [beta guide](reports/beta-guide.md) covers the rest.
 
 <details>
 <summary><b>build from source</b> (Windows only)</summary>
